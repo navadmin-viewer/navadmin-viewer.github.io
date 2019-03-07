@@ -1,1 +1,5 @@
-{"status":-2,"error":"AMS service under maintenance.","years":null}
+{
+	"status": -2,
+	"error": "AMS service under maintenance.",
+	"years": null
+}

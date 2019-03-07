@@ -1,0 +1,12 @@
+html, body {
+	height: 100%;
+	margin: 0;
+}
+
+#wrapper {
+	min-height: 100%; 
+	background-image: url(Icon1024.png);
+	background-repeat: no-repeat;
+	background-position: center center;
+	background-size: contain;
+}

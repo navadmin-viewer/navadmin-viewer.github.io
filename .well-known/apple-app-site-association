@@ -1,0 +1,11 @@
+{
+    "applinks": {
+        "apps": [],
+        "details": [
+            {
+                "appID": "BRR3GVKP37.com.ansonliu.navadmin",
+                "paths": [ "/view-message/*"]
+            }
+        ]
+    }
+}

@@ -1,0 +1,19 @@
+{
+	"activitycontinuation": {
+		"apps": [
+			"3E2UWZ76C2.com.ansonliu.navadmin"
+		]
+	},
+	"applinks": {
+		"apps": [],
+		"details": [
+			{
+				"appID": "3E2UWZ76C2.com.ansonliu.navadmin",
+				"paths": [
+					"/view-message/*", 
+					"/app/*"
+				]
+			}
+		]
+	}
+}

@@ -1,0 +1,9 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.ansonliu.navadmin",
+    "sha256_cert_fingerprints":
+    ["9A:0C:1D:61:BE:9B:1A:35:3B:DC:7C:8C:F9:46:F0:82:1B:EE:21:04:25:52:65:98:44:5D:81:51:54:C7:BB:43"]
+  }
+}]

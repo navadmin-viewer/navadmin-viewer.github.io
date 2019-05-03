@@ -1,0 +1,23 @@
+{
+  "short_name": "Messages",
+  "name": "Navy & Marine Corps Message Viewer",
+  "icons": [
+    {
+      "src": "assets/Icon1024.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "assets/Icon1024.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "prefer_related_applications": true,
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "com.ansonliu.navadmin"
+    }
+  ]
+}

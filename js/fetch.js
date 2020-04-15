@@ -1,4 +1,4 @@
-var server = 'http://admin-message.herokuapp.com';
+var server = 'https://admin-message.herokuapp.com';
 var shareServer = 'https://navadmin-viewer.github.io';
 
 /**

@@ -1,16 +1,140 @@
-<html>
-	<head>
+<!DOCTYPE html>
+<html lang="en">
+<head>	
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>NAVADMIN Viewer</title>
-	<link rel="stylesheet" type="text/css" href="assets/indexStyle.css">
+
+	<!-- Native app functionality and links -->
 	<link rel="manifest" href="manifest.json">
 	<meta name="apple-itunes-app" content="app-id=1345135985">
 	<meta property="og:description" content="Navy & Marine Corps Message Viewer" />
 	<meta property="og:image" content="assets/Icon1024.png" />
 	<meta name="google-site-verification" content="6EKYmQgGQXMflnG4iUF-NLqeuMPwiE5pE4LrZL3H9UE" />
-	</head>
-	<body>
-	<a href="http://github.com/ansonl">
-		<div id="wrapper"></div>
-	</a>
-	</body>
+
+	<link href="css/style.css" rel="stylesheet" />
+	<link href="css/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body>
+	<nav class="navbar navbar-expand-lg navbar-light bg-light">
+		<a class="navbar-brand" href="#">
+			<img src="assets/navadmin_transparent_512.png" width="30" height="30" alt="">
+		</a>
+		<button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+			<span class="navbar-toggler-icon"></span>
+		</button>
+		<div class="collapse navbar-collapse" id="navbarNav">
+			<ul class="navbar-nav">
+				<li class="nav-item">
+					<a class="nav-link active" href="#">Messages</a>
+				</li>
+				<li class="nav-item">
+					<a class="nav-link" id="nav-app-link" href="https://apps.apple.com/us/app/navadmin-viewer/id1345135985">App</a>
+				</li>
+				<li class="nav-item">
+					<a class="nav-link" href="mailto:support@ansonliu.com">Contact</a>
+				</li>
+			</ul>
+		</div>
+		   
+		<div class="input-group">
+			<div class="input-group-prepend">
+				<button class="btn btn-outline-primary dropdown-toggle" id="msg-type-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
+				<div class="dropdown-menu" id="msg-type-dropdown-menu">
+					<!-- <a class="dropdown-item" href="#">NAVADMIN</a> -->
+				</div>
+			</div>
+			<div class="input-group-prepend">
+				<button class="btn btn-outline-secondary dropdown-toggle" id="msg-year-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
+				<div class="dropdown-menu" id="msg-year-dropdown-menu">
+					<!-- <a class="dropdown-item" href="#">Latest year</a> -->
+				</div>
+			</div>
+			<div class="input-group-prepend">
+				<button class="btn btn-outline-secondary dropdown-toggle disabled" id="msg-year-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Title Only</button>
+				<div class="dropdown-menu" id="msg-year-dropdown-menu">
+					<!-- <a class="dropdown-item" href="#">title only</a> -->
+				</div>
+			</div>
+			<input type="text" class="form-control" id="msg-search-input" aria-label="Search text input">
+		</div>
+	</nav>
+	<div class="container-fluid" id="main-container">
+		<div class="progress" id="loading-progress">
+			<div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%">Retrieving data</div>
+		</div>
+		<div id="messages-list">
+			<table class="table table-striped table-hover">
+				<thead>
+					<tr>
+						<th scope="col">#</th>
+						<th scope="col">Title</th>
+					</tr>
+				</thead>
+				<tbody id= "msg-list-table-body">
+					<tr>
+						<th scope="row">XXX/YY</th>
+						<td>N/A</td>
+					</tr>
+				</tbody>
+			</table>
+		</div> 
+		<footer class="pt-4 my-sm-5 pt-sm-5 border-top">
+			<div class="row">
+				<div class="col-12 col-sm">
+					<img class="mb-2" src="assets/navadmin_transparent_512.png" alt="" width="30" height="30">
+					<small class="d-block mb-3 text-muted">All original code is © 2020 Anson Liu</small>
+				</div>
+				<div class="col-6 col-sm">
+					<h5>About</h5>
+					<ul class="list-unstyled text-small">
+						<li>
+							<a class="text-muted" href="http://AnsonLiu.com">Anson Liu</a>
+						</li>
+						<li>
+							<a class="text-muted" href="https://github.com/navadmin-viewer/navadmin-viewer.github.io">Code repository</a>
+						</li>
+						<li>
+							<a class="text-muted" href="https://navadmin-viewer.github.io/privacy.html">Privacy Policy</a>
+						</li>
+					</ul>
+				</div>
+				<div class="col-12 col-sm">
+					<h5>Disclaimer</h5>
+					<ul class="list-unstyled text-small">
+						<span class="text-muted">This program comes with no warranty nor is it an official Department of Defense product. All data is provided as is and the user is responsible for verifying any data with official sources.</span>
+					</ul>
+				</div>
+			</div>
+		</footer>
+		<!-- Modal -->
+<div class="modal fade" id="msg-body-modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLongTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="exampleModalLongTitle"></h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-info modal-share-link">Share</button>
+      </div>
+    </div>
+  </div>
+</div>
+	</div>
+	
+	<script src="js/jquery-3.4.1.min.js"></script>
+	<script src="js/popper.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/types.js"></script>
+	<script src="js/utilities.js"></script>
+	<script src="js/fetch.js"></script>
+	<script src="js/custom.js"></script>
+
+</body>
 </html>

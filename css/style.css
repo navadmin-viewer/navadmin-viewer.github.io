@@ -1,0 +1,27 @@
+#main-container {
+  padding-left: 0pt;
+  padding-right: 0pt;
+}
+
+footer {
+  padding-left: 15pt;
+  padding-right: 15pt;
+}
+
+#msg-body-modal .modal-body {
+  white-space: pre-wrap;
+}
+
+@media (min-width: 992px) { 
+  .input-group { 
+    margin-left: 10pt;
+    float:right
+  } 
+  #main-container {
+  }
+  #messages-list {
+  }
+  #loading-progress {
+  }
+ }
+

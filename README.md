@@ -18,7 +18,7 @@ A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy
 
 - Why not *XXX* device? Can you make *XXX* feature?
 
-  I probably don't have that device. You can send me *XXX* device for testing and pay me for consulting by [emailing me](support@ansonliu.com).
+  I probably don't have that device. You can send me *XXX* device for testing and pay me for consulting by [emailing me](mailto:support@ansonliu.com).
 
 - Can I use your data feed in my own work?
 

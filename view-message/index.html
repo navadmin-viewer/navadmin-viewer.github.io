@@ -1,0 +1,27 @@
+<html>
+	<head>
+	<title>NAVADMIN Viewer</title>
+	<link rel="stylesheet" type="text/css" href="../assets/indexStyle.css">
+	<link rel="manifest" href="../manifest.json">
+	<meta name="apple-itunes-app" content="app-id=1345135985">
+	<meta property="og:description" content="Navy & Marine Corps Message Viewer" />
+	<meta property="og:image" content="../assets/Icon1024.png" />
+	
+	</head>
+	<body>
+		<a href="navadmin://"><div id="wrapper"></div></a>
+	</body>
+	<script src="js/utilities.js"></script>
+	<script>
+		var urlParamMsgType = getUrlParameter(window.location.href, 'type');
+		var urlParamMsgYear = getUrlParameter(window.location.href, 'year');
+		var urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
+		var redirectLink = '../?type=';
+		redirectLink += urlParamMsgType;
+		redirectLink += '&year=';
+		redirectLink += urlParamMsgYear;
+		redirectLink += '&number=';
+		redirectLink += urlParamMsgNumber;
+		window.location.assign(redirectLink);
+	</script>
+</html>

@@ -6,11 +6,17 @@ A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy
 
 [![NAVADMIN Viewer web screenshot](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/navadmin-viewer-web-screenshot.png)](https://navadmin-viewer.github.io/)
 
+## Browser support as of 15APR2020
+
+![Chrome](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/chrome_48x48.png) | ![IE 11](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/internet-explorer_9-11_48x48.png) | ![Edge](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/edge_12-18_48x48.png) | ![Safari](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/safari_48x48.png)| ![Firefox](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/firefox_48x48.png) 
+--- | --- | --- | --- | --- 
+ 80 ✔ | 11 ✔ | 44 ✔ | 13 ✔ | 75 ✔ 
+
 ### FAQ
 
 - Is this an official government product?
 
-  No. NAVADMIN Viewer comes with no warranty or claims of accuracy. The user is responsible for verifying information with official sources. 
+  No. NAVADMIN Viewer comes with no warranty or claim of accuracy. The user is responsible for verifying information with official sources. 
 
 - Is there native app for this?
 
@@ -26,8 +32,10 @@ A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy
 
 ### Credits
 
-NAVADMIN Viewer web client uses code from the following projects. A thank you to all contributors.
+NAVADMIN Viewer web client uses assets from the following projects. Thank you to all contributors to these projects.
 
 - [Bootstrap](https://getbootstrap.com)
 
 - [jQuery](https://jquery.com)
+
+- [airra/browser-logos](https://github.com/alrra/browser-logos)

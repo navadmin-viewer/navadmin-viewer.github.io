@@ -19,9 +19,9 @@ A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy
 
   No. NAVADMIN Viewer comes with no warranty or claim of accuracy. The user is responsible for verifying information with official sources. 
 
-- Is there native app for this?
+- Is there a native app for this?
 
-  Yes. For [Android](https://play.google.com/store/apps/details?id=com.ansonliu.navadmin) and [iOS](https://apps.apple.com/us/app/navadmin-viewer/id1345135985). 
+  Yes. For [iOS](https://apps.apple.com/us/app/navadmin-viewer/id1345135985) and [Android](https://play.google.com/store/apps/details?id=com.ansonliu.navadmin). 
 
 - Why not *XXX* device? Can you make *XXX* feature?
 

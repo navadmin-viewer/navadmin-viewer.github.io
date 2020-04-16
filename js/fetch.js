@@ -57,7 +57,7 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
       if (dataObj.years.length == 0)
         parseMessagesError('Zero years found.');
 
-      for (const year in dataObj.years) {
+      for (var year in dataObj.years) {
         var yearInt = parseInt(year);
         if (yearInt != NaN) {
           yearInts.push(yearInt);
@@ -70,7 +70,7 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
 
     //Sort year ints DESC order
     yearInts.sort(function(a, b) {
-      return b[0]>a[0];
+      return b - a;
     });
 
     //Create new map and set elements in map based on DESC sorted yearInts array order

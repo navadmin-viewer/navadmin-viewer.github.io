@@ -70,7 +70,7 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
 
     //Sort year ints DESC order
     yearInts.sort(function(a, b) {
-      return b[0]>a[0];
+      return b - a;
     });
 
     //Create new map and set elements in map based on DESC sorted yearInts array order

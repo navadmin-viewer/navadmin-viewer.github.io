@@ -1,12 +1,16 @@
 var availableMsgTypes = [
-  MsgType.NAVADMIN, 
-  MsgType.ALNAV, 
-  MsgType.MARADMIN, 
+  MsgType.NAVADMIN,
+  MsgType.ALNAV,
+  MsgType.MARADMIN,
   MsgType.ALMAR
 ];
 
+var urlParamMsgType = MsgType.UNKNOWN;
+var urlParamMsgYear = -1;
+var urlParamMsgNumber = -1;
+
 // msg-type -> {msg-year:[]msg} 
-var cachedMessages = new Map();
+var cachedMessages;
 // postData -> 1 | not set
 var activeMetadataRequests = new Map();
 
@@ -16,7 +20,7 @@ var userSelectedMsgNumber = 0;
 
 var navAppLink;
 
-var loadingProgress; 
+var loadingProgress;
 var loadingProgressHideShowDuration = 100;
 
 var msgModal;
@@ -24,7 +28,7 @@ var msgModalTitle;
 var msgModalBody;
 var msgModalShare;
 
-$( document ).ready(function() {
+$(document).ready(function() {
   navAppLink = $('#nav-app-link');
 
   loadingProgress = $('#loading-progress');
@@ -34,18 +38,23 @@ $( document ).ready(function() {
   msgModalBody = $('#msg-body-modal .modal-body');
   msgModalShare = $('#msg-body-modal .modal-share-link');
 
-  var urlParamMsgType = stringToMsgType(getUrlParameter(window.location.href, 'type'));
-  if (urlParamMsgType != MsgType.UNKNOWN)
-    userSelectedMsgType = urlParamMsgType
-  var urlParamMsgYear = getUrlParameter(window.location.href, 'year');
-  userSelectedMsgYear = urlParamMsgYear
-  var urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
-  userSelectedMsgNumber = urlParamMsgNumber
+  urlParamMsgType = stringToMsgType(getUrlParameter(window.location.href, 'type'));
+  urlParamMsgYear = getUrlParameter(window.location.href, 'year');
+  urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
 
   setFilterMsgTypeDropdown(availableMsgTypes);
-  $("#msg-search-input").on('keyup paste',msgFilterSearchInputChanged);
-  getYearsForMsgType(userSelectedMsgType, [], true);
+  $("#msg-search-input").on('keyup paste', msgFilterSearchInputChanged);
+
   setUIInLoadingStatus(true);
+
+  if (urlParamMsgType != MsgType.UNKNOWN && urlParamMsgYear != -1 && urlParamMsgNumber != -1) {
+    getMsgBody(urlParamMsgType, urlParamMsgYear, urlParamMsgNumber, function() {
+      getYearsForMsgType(userSelectedMsgType, [], true);
+    });
+    console.log('test')
+  } else {
+    getYearsForMsgType(userSelectedMsgType, [], true);
+  }
 
   navAppLink.click(navigateToAppStore)
 
@@ -55,12 +64,12 @@ $( document ).ready(function() {
 function setUIInLoadingStatus(disable) {
   if (disable) {
     loadingProgress.show(loadingProgressHideShowDuration);
-    $( document ).css('cursor', 'wait');
+    $(document).css('cursor', 'wait');
   } else {
     loadingProgress.hide(loadingProgressHideShowDuration);
-    $( document ).css('cursor', 'default');
+    $(document).css('cursor', 'default');
   }
-  
+
 }
 
 /**
@@ -83,7 +92,7 @@ function setFilterMsgTypeDropdown(msgTypes) {
   }
 
   for (var i = 0; i < msgTypes.length; i++) {
-    var a = $('<a>', {'class': 'dropdown-item'});
+    var a = $('<a>', { 'class': 'dropdown-item' });
     a.text(msgTypeToString(msgTypes[i]));
     a.click(createHandler(msgTypes[i]));
     $('#msg-type-dropdown-menu').append(a);
@@ -116,8 +125,8 @@ function setFilterMsgYearDropdown(msgType, msgYear) {
   }
 
   if (cachedMessageTypeYears)
-    cachedMessages.get(msgType).forEach(function (v, k) {
-      var a = $('<a>', {'class': 'dropdown-item'});
+    cachedMessages.get(msgType).forEach(function(v, k) {
+      var a = $('<a>', { 'class': 'dropdown-item' });
       a.text(k);
       a.click(createHandler(msgType, k));
       $('#msg-year-dropdown-menu').append(a);
@@ -148,7 +157,7 @@ function setTableMessages(msgType, msgYear) {
       setUIInLoadingStatus(true);
       return;
     }
-    cachedMessages.get(msgType).forEach(function (v, k) {
+    cachedMessages.get(msgType).forEach(function(v, k) {
       if (msgYear == -1)
         msgYear = k;
     });
@@ -164,7 +173,7 @@ function setTableMessages(msgType, msgYear) {
     return;
   }
 
-  for (var i = msg.length-1; i >= 0; i--) {
+  for (var i = msg.length - 1; i >= 0; i--) {
     m = msg[i];
     var tr = $("<tr>", {});
     var th = $("<th>", {});

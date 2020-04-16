@@ -21,23 +21,23 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
   //Check if we have an active request for the same data in progress already. 
   if (activeMetadataRequests.get(postData))
     return;
-  else 
+  else
     activeMetadataRequests.set(postData, 1);
-  
+
   var request = $.ajax({
     url: server + '/messages',
     method: "POST",
     data: postData,
     dataType: "json",
-    complete: function( jqXHR, textStatus ) {
+    complete: function(jqXHR, textStatus) {
       activeMetadataRequests.delete(postData);
     }
   });
-  request.done(function( data, textStatus, jqXHR ) {
+  request.done(function(data, textStatus, jqXHR) {
     var dataObj = data;
     //Define alerting format for errors
-    function parseMessagesError (error) {
-      alert('Unable to get message list. ' + error ? error : '' + '\nStatus: '  + textStatus + '\nServer returned error ' + dataObj.status + ' '+ dataObj.error);
+    function parseMessagesError(error) {
+      alert('Unable to get message list. ' + error ? error : '' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
     }
 
     if ('status' in dataObj) {
@@ -79,6 +79,8 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
       yearsMsgsDesc.set(yearInts[i], yearsMsgs.get(yearInts[i]));
     }
 
+    if (!cachedMessages)
+      cachedMessages = new Map();
     cachedMessages.set(msgType, yearsMsgsDesc);
 
     /*
@@ -109,9 +111,9 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
       */
     }
   });
-  request.fail(function( jqXHR, textStatus, errorThrown) {
+  request.fail(function(jqXHR, textStatus, errorThrown) {
     setUIInLoadingStatus(false);
-    alert( "Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+    alert("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
   });
 }
 
@@ -129,28 +131,29 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   postData += msgYear;
   postData += '&number=';
   postData += msgNumber;
-  
+
   //Check if we have an active request for the same data in progress already. 
   if (activeMetadataRequests.get(postData))
     return;
-  else 
+  else
     activeMetadataRequests.set(postData, 1);
-  
-  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(m.number.toString(), 3) + '/' + (m.year % 1000).toString();
+
+  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber.toString(), 3) + '/' + (msgYear % 1000).toString();
 
   var request = $.ajax({
     url: server + '/message',
     method: "POST",
     data: postData,
     dataType: "text",
-    complete: function( jqXHR, textStatus ) {
+    complete: function(jqXHR, textStatus) {
       activeMetadataRequests.delete(postData);
       msgModal.modal('show');
-      completionHandler();
+      if (completionHandler)
+        completionHandler();
     }
   });
-  request.done(function( data, textStatus, jqXHR ) {
-    
+  request.done(function(data, textStatus, jqXHR) {
+
 
     //Check request HTTP status
     if (jqXHR.status == 404 || data.length == 0) {
@@ -158,21 +161,23 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
       msgModalBody.text('Message not found');
     } else if (jqXHR.status == 503) {
       msgModalTitle.text(messageSelectorText);
-      msgModalBody.text('Data is unavailable.' + '\nStatus: '  + textStatus + '\nServer returned error ' + dataObj.status + ' '+ dataObj.error);
+      msgModalBody.text('Data is unavailable.' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
     } else {
-      var cachedMsg = cachedMessages.get(msgType).get(msgYear)[msgNumber-1];
+      var cachedMsg = cachedMessages ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
       if (cachedMsg)
         cachedMsg.body = data;
-      if (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) {
-        msgModalTitle.text(messageSelectorText + (cachedMsg.title ? ' - ' + cachedMsg.title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
+      console.log(urlParamMsgType, urlParamMsgYear, urlParamMsgNumber, msgType, msgYear, msgNumber)
+      if ((userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) || (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)) {
+        console.log('tst')
+        msgModalTitle.text(messageSelectorText + (cachedMsg && cachedMsg.title.length > 0 ? ' - ' + cachedMsg.title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
         msgModalBody.text(data);
       }
     }
   });
 
-  request.fail(function( jqXHR, textStatus, errorThrown) {
+  request.fail(function(jqXHR, textStatus, errorThrown) {
     msgModalTitle.text(messageSelectorText);
-    msgModalBody.text( "Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+    msgModalBody.text("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
   });
 }
 

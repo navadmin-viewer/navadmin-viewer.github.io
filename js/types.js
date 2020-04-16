@@ -1,9 +1,9 @@
 MsgType = {
-  NAVADMIN : 0,
-  ALNAV : 1,
-  MARADMIN : 2,
-  ALMAR : 3,
-  UNKNOWN : 4
+  NAVADMIN: 0,
+  ALNAV: 1,
+  MARADMIN: 2,
+  ALMAR: 3,
+  UNKNOWN: 4
 }
 
 function msgTypeToString(mt) {

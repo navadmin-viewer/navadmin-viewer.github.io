@@ -1,35 +1,40 @@
 <html>
-	<head>
-	<title>NAVADMIN Viewer</title>
-	<link rel="stylesheet" type="text/css" href="../assets/indexStyle.css">
-	<link rel="manifest" href="../manifest.json">
-	<meta name="apple-itunes-app" content="app-id=1345135985">
-	<meta property="og:description" content="Navy & Marine Corps Message Viewer" />
-	<meta property="og:image" content="../assets/Icon1024.png" />
-	
-	</head>
-	<body>
-		<a href="navadmin://"><div id="wrapper"></div></a>
-	</body>
-	<script>
-		/*
-		* https://www.tinabellvance.com/posts/getting-url-parameters-in-ie11-using-jquery-vanilla-javascript-and-es6/
-		*/
-		function getUrlParameter(location, name) {
-			name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
-			var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
-			var results = regex.exec(location);
-			return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
-		};
-		var urlParamMsgType = getUrlParameter(window.location.href, 'type');
-		var urlParamMsgYear = getUrlParameter(window.location.href, 'year');
-		var urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
-		var redirectLink = '../?type=';
-		redirectLink += urlParamMsgType;
-		redirectLink += '&year=';
-		redirectLink += urlParamMsgYear;
-		redirectLink += '&number=';
-		redirectLink += urlParamMsgNumber;
-		window.location.assign(redirectLink);
-	</script>
+
+<head>
+  <title>NAVADMIN Viewer</title>
+  <link rel="stylesheet" type="text/css" href="../assets/indexStyle.css">
+  <link rel="manifest" href="../manifest.json">
+  <meta name="apple-itunes-app" content="app-id=1345135985">
+  <meta property="og:description" content="Navy & Marine Corps Message Viewer" />
+  <meta property="og:image" content="../assets/Icon1024.png" />
+
+</head>
+
+<body>
+  <a href="navadmin://">
+    <div id="wrapper"></div>
+  </a>
+</body>
+<script>
+  /*
+   * https://www.tinabellvance.com/posts/getting-url-parameters-in-ie11-using-jquery-vanilla-javascript-and-es6/
+   */
+  function getUrlParameter(location, name) {
+    name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+    var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+    var results = regex.exec(location);
+    return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+  };
+  var urlParamMsgType = getUrlParameter(window.location.href, 'type');
+  var urlParamMsgYear = getUrlParameter(window.location.href, 'year');
+  var urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
+  var redirectLink = '../?type=';
+  redirectLink += urlParamMsgType;
+  redirectLink += '&year=';
+  redirectLink += urlParamMsgYear;
+  redirectLink += '&number=';
+  redirectLink += urlParamMsgNumber;
+  window.location.assign(redirectLink);
+</script>
+
 </html>

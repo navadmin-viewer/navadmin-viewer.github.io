@@ -1,6 +1,6 @@
 /*
-* https://www.tinabellvance.com/posts/getting-url-parameters-in-ie11-using-jquery-vanilla-javascript-and-es6/
-*/
+ * https://www.tinabellvance.com/posts/getting-url-parameters-in-ie11-using-jquery-vanilla-javascript-and-es6/
+ */
 function getUrlParameter(location, name) {
   name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
   var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
@@ -9,8 +9,8 @@ function getUrlParameter(location, name) {
 };
 
 //left pad
-function pad(num, size) { 
-  return ('000' + num).slice(-size); 
+function pad(num, size) {
+  return ('000' + num).slice(-size);
 }
 
 //https://stackoverflow.com/a/21742107/761902

@@ -57,7 +57,7 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
       if (dataObj.years.length == 0)
         parseMessagesError('Zero years found.');
 
-      for (const year in dataObj.years) {
+      for (var year in dataObj.years) {
         var yearInt = parseInt(year);
         if (yearInt != NaN) {
           yearInts.push(yearInt);

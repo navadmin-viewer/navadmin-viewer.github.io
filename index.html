@@ -15,7 +15,7 @@
 
   <link href="css/style.css" rel="stylesheet" />
   <link href="css/bootstrap.min.css" rel="stylesheet" />
-	
+
 </head>
 
 <body>
@@ -72,12 +72,19 @@
           <tr>
             <th scope="col">#</th>
             <th scope="col">Title</th>
+            <th scope="col"></th>
           </tr>
         </thead>
         <tbody id="msg-list-table-body">
           <tr>
             <th scope="row">XXX/YY</th>
             <td>N/A</td>
+            <td>
+              <div class="stats-box">
+                <p><img src="assets/eye.svg">&nbsp;views</p>
+                <p>stars</p>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -139,30 +146,30 @@
   <script src="js/fetch.js"></script>
   <script src="js/custom.js"></script>
 
-	<!-- The core Firebase JS SDK is always required and must be listed first -->
-<script src="https://www.gstatic.com/firebasejs/7.14.0/firebase-app.js"></script>
+  <!-- The core Firebase JS SDK is always required and must be listed first -->
+  <script src="https://www.gstatic.com/firebasejs/7.14.0/firebase-app.js"></script>
 
-<!-- TODO: Add SDKs for Firebase products that you want to use
+  <!-- TODO: Add SDKs for Firebase products that you want to use
      https://firebase.google.com/docs/web/setup#available-libraries -->
-<script src="https://www.gstatic.com/firebasejs/7.14.0/firebase-analytics.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/7.14.0/firebase-analytics.js"></script>
 
-<script>
-  // Your web app's Firebase configuration
-  var firebaseConfig = {
-    apiKey: "AIzaSyBV-G539Qxzz-KtCjT4Bx6v7avTJECrCN8",
-    authDomain: "navadmin-ios.firebaseapp.com",
-    databaseURL: "https://navadmin-ios.firebaseio.com",
-    projectId: "navadmin-ios",
-    storageBucket: "navadmin-ios.appspot.com",
-    messagingSenderId: "404757436431",
-    appId: "1:404757436431:web:f3c40684e54f796de66b7a",
-    measurementId: "G-EDWQZT9FX9"
-  };
-  // Initialize Firebase
-  firebase.initializeApp(firebaseConfig);
-  firebase.analytics();
-</script>
-	
+  <script>
+    // Your web app's Firebase configuration
+    var firebaseConfig = {
+      apiKey: "AIzaSyBV-G539Qxzz-KtCjT4Bx6v7avTJECrCN8",
+      authDomain: "navadmin-ios.firebaseapp.com",
+      databaseURL: "https://navadmin-ios.firebaseio.com",
+      projectId: "navadmin-ios",
+      storageBucket: "navadmin-ios.appspot.com",
+      messagingSenderId: "404757436431",
+      appId: "1:404757436431:web:f3c40684e54f796de66b7a",
+      measurementId: "G-EDWQZT9FX9"
+    };
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    firebase.analytics();
+  </script>
+
 </body>
 
 </html>

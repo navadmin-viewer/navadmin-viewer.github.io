@@ -51,7 +51,13 @@ $(document).ready(function() {
     getMsgBody(urlParamMsgType, urlParamMsgYear, urlParamMsgNumber, function() {
       getYearsForMsgType(userSelectedMsgType, [], true);
     });
-    console.log('test')
+
+    //Log launch with parameter
+    if (typeof analytics !== 'undefined') {
+      analytics.logEvent('LaunchParameter', {
+        messageNumber: msgTypeToString(urlParamMsgType) + ' ' + pad(m.number, 3) + '/' + pad((m.year % 1000), 2)
+      });
+    }
   } else {
     getYearsForMsgType(userSelectedMsgType, [], true);
   }
@@ -178,7 +184,8 @@ function setTableMessages(msgType, msgYear) {
     var tr = $("<tr>", {});
     var th = $("<th>", {});
     var td = $("<td>", {});
-    th.text(pad(m.number.toString(), 3) + '/' + (m.year % 1000).toString());
+    var tdStats = $("<td>", {});
+    th.text(pad(m.number, 3) + '/' + (m.year % 1000).toString());
     if (m.title.length == 0 || m.cancelled) {
       td.text(m.title.length > 0 ? m.title : 'N/A');
       tr.addClass('table-danger');
@@ -186,7 +193,30 @@ function setTableMessages(msgType, msgYear) {
     } else {
       td.text(m.title);
     }
-    tr.append(th, td);
+
+    //Setup stats box
+    var actStarCount = -1;
+    var actViewCount = -1;
+    if (m.actSum && m.actSum.length > 0) {
+      m.actSum.forEach(function(v) {
+        if (v.actType == 'star')
+          actStarCount = v.actNumber;
+        else if (v.actType == 'view')
+          actViewCount = v.actNumber;
+      });
+    }
+    if (actStarCount > -1 && actViewCount > -1) {
+      var divStats = $("<div>", { 'class': 'stats-box' });
+      var pStars = $("<p>", {});
+      var pViews = $("<p>", {});
+      pStars.text('\u2605\u00a0' + actStarCount);
+      pViews.text('\u00a0' + actViewCount);
+      pViews.prepend($("<img>", { 'src': 'assets/eye.svg' }));
+      divStats.append(pStars, pViews);
+      tdStats.append(divStats);
+    }
+
+    tr.append(th, td, tdStats);
 
     tr.attr('msg-type', msgTypeToString(m.type));
 
@@ -206,7 +236,12 @@ function setTableMessages(msgType, msgYear) {
           }
         }
 
-        getMsgBody(msgType, msgYear, msgNumber, createCompletionHandler(tr));
+        //Check if current message exists in cache
+        var cachedMsg = cachedMessages ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
+        if (cachedMsg && cachedMsg.body && cachedMsg.body.length > 0)
+          showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.body);
+        else
+          getMsgBody(msgType, msgYear, msgNumber, createCompletionHandler(tr));
       };
     }
     tr.click(createHandler(m.type, m.year, m.number));
@@ -240,6 +275,22 @@ function navigateToAppStore(e) {
     appLink = 'https://apps.apple.com/us/app/navadmin-viewer/id1345135985';
   }
   location.assign(appLink);
+}
+
+function showMessageModal(msgType, msgYear, msgNumber, title, body) {
+  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber, 3) + '/' + (msgYear % 1000).toString();
+  msgModalTitle.text(messageSelectorText + (title ? ' - ' + title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
+  msgModalBody.text(body);
+  msgModal.modal('show');
+
+  if (typeof analytics !== 'undefined') {
+    //Log Viewed Message event
+    analytics.logEvent('ViewedMessage', {
+      messageNumber: msgTypeToString(urlParamMsgType) + ' ' + pad(m.number, 3) + '/' + pad((m.year % 1000), 2)
+    });
+  }
+
+  sendViewActivity(msgType, msgYear, msgNumber);
 }
 
 function shareUserSelectedMessageLink(e) {

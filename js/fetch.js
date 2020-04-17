@@ -138,7 +138,7 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   else
     activeMetadataRequests.set(postData, 1);
 
-  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber.toString(), 3) + '/' + (msgYear % 1000).toString();
+  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber, 3) + '/' + (msgYear % 1000).toString();
 
   var request = $.ajax({
     url: server + '/message',
@@ -147,7 +147,6 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
     dataType: "text",
     complete: function(jqXHR, textStatus) {
       activeMetadataRequests.delete(postData);
-      msgModal.modal('show');
       if (completionHandler)
         completionHandler();
     }
@@ -166,11 +165,18 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
       var cachedMsg = cachedMessages ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
       if (cachedMsg)
         cachedMsg.body = data;
-      console.log(urlParamMsgType, urlParamMsgYear, urlParamMsgNumber, msgType, msgYear, msgNumber)
-      if ((userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) || (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)) {
-        console.log('tst')
-        msgModalTitle.text(messageSelectorText + (cachedMsg && cachedMsg.title.length > 0 ? ' - ' + cachedMsg.title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
-        msgModalBody.text(data);
+      //If the retrieved msg type is the currently the user selected message type or url passed message, show it.
+      if (
+        (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||
+        (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)
+      ) {
+        showMessageModal(
+          msgType,
+          msgYear,
+          msgNumber,
+          (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : ''),
+          data
+        );
       }
     }
   });
@@ -190,4 +196,65 @@ function createMessageShareLink(msgType, msgYear, msgNumber) {
   shareLink += '&number=';
   shareLink += msgNumber;
   return shareLink;
+}
+
+/**
+ * Send message view activity for view stats.
+ * @param {MsgType} msgType The message type. 
+ * @param {number} msgYear The message year.
+ * @param {number} msgNumber The message number.
+ */
+function sendViewActivity(msgType, msgYear, msgNumber) {
+  var uuid = getCookie('uuid');
+  if (uuid.length == 0) {
+    uuid = uuidv4();
+    setCookie('uuid', uuid, 3650);
+  }
+  var postData = '';
+  postData += 'deviceUUID=';
+  postData += uuid;
+  postData += '&deviceOS=';
+  postData += window.navigator.platform ? window.navigator.platform : 'web';
+  postData += '&deviceName=';
+  postData += 'none';
+
+  //Check if we have an active request for the same data in progress already. 
+  if (activeMetadataRequests.get(postData))
+    return;
+  else
+    activeMetadataRequests.set(postData, 1);
+
+  var request = $.ajax({
+    url: server + '/updateUserInfo',
+    method: "POST",
+    data: postData,
+    dataType: "json"
+  });
+  request.done(function(data, textStatus, jqXHR) {
+    if ('status' in data) {
+      if (data.status == 0) {
+        var actPostData = '';
+        actPostData += 'deviceUUID=';
+        actPostData += uuid;
+        actPostData += '&activityType=';
+        actPostData += 'view';
+        actPostData += '&activityMsgType=';
+        actPostData += msgTypeToString(msgType);
+        actPostData += '&activityMsgYear=';
+        actPostData += msgYear;
+        actPostData += '&activityMsgNumber=';
+        actPostData += msgNumber;
+
+        var actRequest = $.ajax({
+          url: server + '/updateUserActivity',
+          method: "POST",
+          data: actPostData
+        });
+      }
+    }
+  });
+
+  request.fail(function(jqXHR, textStatus, errorThrown) {
+    console.log(errorThrown);
+  });
 }

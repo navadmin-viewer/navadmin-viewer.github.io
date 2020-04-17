@@ -32,8 +32,8 @@ Examples:
 *Adding `/view-message/?` path at the end of the URL before parameters will automatically launch the native NAVADMIN Viewer iOS and Android apps if installed.*
 
 Parameter | Allowed Values | Description
---- | --- | --- | ---
-`type` | NAVADMIN, ALNAV, MARADMIN, ALMAR | The shared message type.
+--- | --- | --- 
+`type` | `NAVADMIN`, `ALNAV`, `MARADMIN`, `ALMAR` | The shared message type.
 `year` | 20xx | The shared message year.
 `number` | xxx | The shared message number.
 

@@ -65,4 +65,8 @@ NAVADMIN Viewer web client uses assets from the following projects. Thank you to
 
 - [jQuery](https://jquery.com)
 
+- [core-js](https://github.com/zloirock/core-js)
+
+- [FireFormat.Info](https://www.fileformat.info/)
+
 - [airra/browser-logos](https://github.com/alrra/browser-logos)

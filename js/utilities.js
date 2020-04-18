@@ -54,6 +54,12 @@ function setCookie(cname, cvalue, exdays) {
   document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
 
-const valuesPolyfill = function values (object) {
-  return Object.keys(object).map(key => object[key]);
+Object.prototype.values = function(obj) {
+                                var res = [];
+    for (var i in obj) {
+        if (obj.hasOwnProperty(i)) {
+            res.push(obj[i]);
+        }
+    }
+    return res;
 };

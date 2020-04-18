@@ -217,7 +217,7 @@ function setTableMessages(msgType, msgYear) {
     }
 
     tr.append(th, td, tdStats);
-
+    tr.css('cursor', 'pointer');
     tr.attr('msg-type', msgTypeToString(m.type));
 
     //Create click handler for table row
@@ -232,7 +232,7 @@ function setTableMessages(msgType, msgYear) {
         //Create completion handler to reset table row progress indicator when done
         function createCompletionHandler(tr) {
           return function() {
-            tr.css('cursor', 'default');
+            tr.css('cursor', 'pointer');
           }
         }
 

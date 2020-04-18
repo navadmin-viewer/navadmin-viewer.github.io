@@ -53,13 +53,3 @@ function setCookie(cname, cvalue, exdays) {
   var expires = "expires=" + d.toUTCString();
   document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
-
-Object.prototype.values = function(obj) {
-                                var res = [];
-    for (var i in obj) {
-        if (obj.hasOwnProperty(i)) {
-            res.push(obj[i]);
-        }
-    }
-    return res;
-};

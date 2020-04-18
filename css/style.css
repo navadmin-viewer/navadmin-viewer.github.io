@@ -12,7 +12,7 @@
 
 .stats-box img {
   height: 12px;
-  width: 8px;
+  width: 8px; /* Need to specify width for IE 11 */
 }
 
 footer {

@@ -53,3 +53,7 @@ function setCookie(cname, cvalue, exdays) {
   var expires = "expires=" + d.toUTCString();
   document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
+
+const valuesPolyfill = function values (object) {
+  return Object.keys(object).map(key => object[key]);
+};

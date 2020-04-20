@@ -186,12 +186,14 @@ function setTableMessages(msgType, msgYear) {
     var td = $("<td>", {});
     var tdStats = $("<td>", {});
     th.text(pad(m.number, 3) + '/' + (m.year % 1000).toString());
-    if (m.title.length == 0 || m.cancelled) {
+    td.text(m.title);
+    if (m.title.length == 0) {
+      td.text('No subject found');
+    } 
+    if (m.cancelled) {
       td.text(m.title.length > 0 ? m.title : 'N/A');
       tr.addClass('table-danger');
       tr.css('cursor', 'not-allowed');
-    } else {
-      td.text(m.title);
     }
 
     //Setup stats box

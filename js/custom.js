@@ -15,8 +15,8 @@ var cachedMessages;
 var activeMetadataRequests = new Map();
 
 var userSelectedMsgType = MsgType.NAVADMIN;
-var userSelectedMsgYear = 0;
-var userSelectedMsgNumber = 0;
+var userSelectedMsgYear = -1;
+var userSelectedMsgNumber = -1;
 
 var navAppLink;
 
@@ -29,6 +29,10 @@ var msgModalBody;
 var msgModalShare;
 
 $(document).ready(function() {
+  //Set callback for setting wait cursor
+  $(document).ajaxStart(function () { $("html").addClass("wait"); });
+  $(document).ajaxStop(function () { $("html").removeClass("wait"); });
+
   navAppLink = $('#nav-app-link');
 
   loadingProgress = $('#loading-progress');
@@ -39,18 +43,37 @@ $(document).ready(function() {
   msgModalShare = $('#msg-body-modal .modal-share-link');
 
   urlParamMsgType = stringToMsgType(getUrlParameter(window.location.href, 'type'));
-  urlParamMsgYear = getUrlParameter(window.location.href, 'year');
-  urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
+  urlParamMsgYear = parseInt(getUrlParameter(window.location.href, 'year'));
+  urlParamMsgNumber = parseInt(getUrlParameter(window.location.href, 'number'));
 
+  //Use url parameter msg type as the default selected msg type in the UI filter. 
+  if (urlParamMsgType != MsgType.UNKNOWN) {
+    userSelectedMsgType = urlParamMsgType;
+    //Only prefill url param msg year if the url param msg type is valid.
+    if (urlParamMsgYear > -1) {
+      userSelectedMsgYear = urlParamMsgYear;
+    }
+  } 
+  
   setFilterMsgTypeDropdown(availableMsgTypes);
-  $("#msg-search-input").on('keyup paste', msgFilterSearchInputChanged);
+  setUIInLoadingStatus(true, "Getting available messages");
 
-  setUIInLoadingStatus(true);
+  function getMessageYearsAndMetadata() {
+    return function() {
+      getYearsForMsgType(
+        userSelectedMsgType, 
+        [], 
+        userSelectedMsgYear == -1 , 
+        userSelectedMsgYear > -1 ? function() {
+          getYearsForMsgType(userSelectedMsgType, userSelectedMsgYear > -1 ? [userSelectedMsgYear] : [], false, null)
+        } : null
+      );
+    }
+  }
 
-  if (urlParamMsgType != MsgType.UNKNOWN && urlParamMsgYear != -1 && urlParamMsgNumber != -1) {
-    getMsgBody(urlParamMsgType, urlParamMsgYear, urlParamMsgNumber, function() {
-      getYearsForMsgType(userSelectedMsgType, [], true);
-    });
+  //Use url params to start loading a message to view if the url params are valid. 
+  if (urlParamMsgType != MsgType.UNKNOWN && urlParamMsgYear > -1 && urlParamMsgNumber > -1) {
+    getMsgBody(urlParamMsgType, urlParamMsgYear, urlParamMsgNumber, getMessageYearsAndMetadata());
 
     //Log launch with parameter
     if (typeof analytics !== 'undefined') {
@@ -59,23 +82,31 @@ $(document).ready(function() {
       });
     }
   } else {
-    getYearsForMsgType(userSelectedMsgType, [], true);
+    //No completely prefilled message selector found in url parameters.
+    getMessageYearsAndMetadata()();
   }
+
+  $("#msg-search-input").on('keyup paste', msgFilterSearchInputChanged);
 
   navAppLink.click(navigateToAppStore)
 
   msgModalShare.click(shareUserSelectedMessageLink);
 });
 
-function setUIInLoadingStatus(disable) {
+function setUIInLoadingStatus(disable, statusText) {
   if (disable) {
+    loadingProgress.removeClass('bg-warning');
     loadingProgress.show(loadingProgressHideShowDuration);
-    $(document).css('cursor', 'wait');
+    loadingProgress.find('div').text(statusText);
   } else {
-    loadingProgress.hide(loadingProgressHideShowDuration);
-    $(document).css('cursor', 'default');
+    if (statusText && statusText.length > 0) {
+      loadingProgress.add('bg-warning');
+    } else {
+      loadingProgress.removeClass('bg-warning');
+      loadingProgress.hide(loadingProgressHideShowDuration);
+    }
+    loadingProgress.find('div').text(statusText);
   }
-
 }
 
 /**
@@ -91,9 +122,9 @@ function setFilterMsgTypeDropdown(msgTypes) {
       e.preventDefault(); // cancel the link behaviour
       $("#msg-type-dropdown").text(msgTypeToString(msgType));
       userSelectedMsgType = msgType;
-      setFilterMsgYearDropdown(msgType, -1);
+      setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
       $("#msg-search-input").val('');
-      setTableMessages(msgType, -1);
+      setTableMessages(msgType, userSelectedMsgYear);
     };
   }
 
@@ -142,8 +173,8 @@ function setFilterMsgYearDropdown(msgType, msgYear) {
         msgYear = k;
     });
   else {
-    getYearsForMsgType(msgType, [], true);
-    setUIInLoadingStatus(true);
+    getYearsForMsgType(msgType, [], true, null);
+    setUIInLoadingStatus(true, null);
   }
 
   userSelectedYear = msgYear;
@@ -159,8 +190,8 @@ function setTableMessages(msgType, msgYear) {
   //If msgYear is -1, set the msgYear to the latest year for the message type.
   if (msgYear == -1) {
     if (!cachedMessages.get(msgType)) {
-      getYearsForMsgType(msgType, [msgYear], false);
-      setUIInLoadingStatus(true);
+      getYearsForMsgType(msgType, [msgYear], false, null);
+      setUIInLoadingStatus(true, null);
       return;
     }
     cachedMessages.get(msgType).forEach(function(v, k) {
@@ -168,14 +199,14 @@ function setTableMessages(msgType, msgYear) {
         msgYear = k;
     });
   }
-
   msg = cachedMessages.get(msgType).get(msgYear);
 
   $('#msg-list-table-body').empty();
 
   if (!msg) {
-    getYearsForMsgType(msgType, [msgYear], false);
-    setUIInLoadingStatus(true);
+    console.log('No msg array found for ' + msgTypeToString(msgType) + ' ' + msgYear + '. Creating new network request.');
+    getYearsForMsgType(msgType, [msgYear], false, null);
+    setUIInLoadingStatus(true, null);
     return;
   }
 
@@ -226,7 +257,7 @@ function setTableMessages(msgType, msgYear) {
     function createHandler(msgType, msgYear, msgNumber) {
       return function(e) {
         e.preventDefault(); // cancel the link behaviour
-        tr.css('cursor', 'progress');
+        //tr.css('cursor', 'progress');
         userSelectedMsgType = msgType;
         userSelectedMsgYear = msgYear;
         userSelectedMsgNumber = msgNumber;

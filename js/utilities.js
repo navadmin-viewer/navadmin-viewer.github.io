@@ -23,6 +23,7 @@ function getMobileOperatingSystem() {
   return "unknown";
 }
 
+//UUID generation
 //https://stackoverflow.com/a/2117523/761902
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -53,3 +54,15 @@ function setCookie(cname, cvalue, exdays) {
   var expires = "expires=" + d.toUTCString();
   document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
+
+//Serialization/Deserialzation of nested map in local storage
+//https://stackoverflow.com/a/51221692/761902
+Map.prototype.toJSON = function() {
+  return ['window.Map', Array.from(this.entries())];
+};
+Map.fromJSON = function(key, value) {
+  return (value instanceof Array && value[0] == 'window.Map') ?
+      new Map(value[1]) :
+      value
+  ;
+};

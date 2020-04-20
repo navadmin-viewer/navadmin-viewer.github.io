@@ -7,7 +7,8 @@ var shareServer = 'https://navadmin-viewer.github.io';
  * @param {number[]} yearsToGetMetadata The message years to get metadata for and year to set the table contents to on request completion.
  * @param {boolean} getLatestYearMetadata Indicate whether another request should be initiated to get the latest retrieved year metadata from server.
  */
-function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) {
+function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, completionHandler) {
+  console.log('Network fetch request received for ' + msgTypeToString(msgType) + ' ' + yearsToGetMetadata + ' ' + getLatestYearMetadata + ' ' + completionHandler);
   var postData = '';
   postData += 'type=';
   postData += msgTypeToString(msgType);
@@ -19,10 +20,12 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
     });
 
   //Check if we have an active request for the same data in progress already. 
-  if (activeMetadataRequests.get(postData))
+  if (activeMetadataRequests.get(postData)) {
+    console.log('Identical fetch request for ' + postData + ' already in progress. ')
     return;
-  else
+  } else {
     activeMetadataRequests.set(postData, 1);
+  }
 
   var request = $.ajax({
     url: server + '/messages',
@@ -31,6 +34,8 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
     dataType: "json",
     complete: function(jqXHR, textStatus) {
       activeMetadataRequests.delete(postData);
+      if (completionHandler)
+        completionHandler();
     }
   });
   request.done(function(data, textStatus, jqXHR) {
@@ -94,14 +99,18 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
 
     //If getLatestYearMetadata is true, make another request to the server for the latest year metadata
     if (getLatestYearMetadata && yearInts.length > 0) {
-      getYearsForMsgType(msgType, [yearInts[0]], false);
+      console.log("Make follow up network request for message metadata for " + msgTypeToString(msgType) + ' ' + yearInts[0]);
+      setUIInLoadingStatus(true, 'Getting messages data');
+      getYearsForMsgType(msgType, [yearInts[0]], false, null);
     } else {
-      setUIInLoadingStatus(false);
+      setUIInLoadingStatus(false, null);
     }
 
     if (userSelectedMsgType == msgType) {
       setFilterMsgYearDropdown(msgType, yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1);
-      setTableMessages(msgType, yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1);
+      //setTableMessages will actually start another msg metadata fetch for the latest year on first load because the data is not stored in memory yet,
+      //but this second request will not conflict with the previous follow up network request for metadata because it will be detected as duplicate
+      setTableMessages(msgType, yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1); 
 
       /*
       //All years
@@ -112,8 +121,8 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata) 
     }
   });
   request.fail(function(jqXHR, textStatus, errorThrown) {
-    setUIInLoadingStatus(false);
-    alert("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+    console.log("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+    setUIInLoadingStatus(false, "Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
   });
 }
 

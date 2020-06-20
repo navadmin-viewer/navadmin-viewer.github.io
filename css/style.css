@@ -1,6 +1,6 @@
 /* CSS class for setting wait cursor */
 /* https://stackoverflow.com/a/10801889/761902 */
-html.wait, html.wait * { cursor: wait !important; }
+html.wait, html.wait * { cursor: progress !important; }
 
 #main-container {
   padding-left: 0pt;

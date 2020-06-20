@@ -217,15 +217,20 @@ function setTableMessages(msgType, msgYear) {
     var td = $("<td>", {});
     var tdStats = $("<td>", {});
     th.text(pad(m.number, 3) + '/' + (m.year % 1000).toString());
-    td.text(m.title);
+
+    var messageTitle = m.title;
     if (m.title.length == 0) {
-      td.text('No subject found');
+      messageTitle = 'No subject found';
     } 
     if (m.cancelled) {
-      td.text(m.title.length > 0 ? m.title : 'N/A');
+      messageTitle = m.title.length > 0 ? m.title : 'N/A';
       tr.addClass('table-danger');
       tr.css('cursor', 'not-allowed');
     }
+
+    var subjectLink = $("<a>", { 'href': createMessageShareLink(m.type, m.year, m.number) });
+    subjectLink.text(messageTitle);
+    td.append(subjectLink);
 
     //Setup stats box
     var actStarCount = -1;

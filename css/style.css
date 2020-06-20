@@ -7,6 +7,11 @@ html.wait, html.wait * { cursor: wait !important; }
   padding-right: 0pt;
 }
 
+td a, td a:link, td a:visited, td a:link:active, td a:visited:active {
+  color: #212529;
+  text-decoration: none;
+}
+
 .stats-box p {
   white-space: nowrap;
   margin: 0;

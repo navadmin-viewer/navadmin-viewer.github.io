@@ -196,9 +196,9 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   });
 }
 
-function createMessageShareLink(msgType, msgYear, msgNumber) {
-  var shareLink = shareServer + '/view-message/?';
-  shareLink += 'type=';
+function createMessageDirectLink(msgType, msgYear, msgNumber, redirection) {
+  var shareLink = shareServer + (redirection ? '/view-message/' : '/');
+  shareLink += '?type=';
   shareLink += msgTypeToString(msgType);
   shareLink += '&year=';
   shareLink += msgYear;

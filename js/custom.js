@@ -228,7 +228,7 @@ function setTableMessages(msgType, msgYear) {
       tr.css('cursor', 'not-allowed');
     }
 
-    var subjectLink = $("<a>", { 'href': createMessageShareLink(m.type, m.year, m.number) });
+    var subjectLink = $("<a>", { 'href': createMessageDirectLink(m.type, m.year, m.number, false) });
     subjectLink.text(messageTitle);
     td.append(subjectLink);
 
@@ -333,6 +333,6 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
 
 function shareUserSelectedMessageLink(e) {
   e.preventDefault(); // cancel the link behaviour
-  var shareLink = createMessageShareLink(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber);
+  var shareLink = createMessageDirectLink(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, true);
   window.prompt("Copy the below share link to clipboard (\u229e Ctrl+C / \uf8ff \u2318+C)", shareLink);
 }

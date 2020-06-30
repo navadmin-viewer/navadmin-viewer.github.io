@@ -47,9 +47,9 @@ Parameter | Allowed Values | Description
 
   Yes. For [iOS](https://apps.apple.com/us/app/navadmin-viewer/id1345135985) and [Android](https://play.google.com/store/apps/details?id=com.ansonliu.navadmin). 
 
-- Why not support *XXX* device? Can you make *XXX* feature?
+- Why not support *XXX* feature and device?
 
-  I probably don't have that device. You can send me *XXX* device for testing and pay me for consulting by [emailing me](mailto:support@ansonliu.com).
+  I may not have that device. I currently work on this in my own time for free. You may contact me for consulting by [emailing me](mailto:support@ansonliu.com).
 
 - Can I use your data feed in my own work?
 

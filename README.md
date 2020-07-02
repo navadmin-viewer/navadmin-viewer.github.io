@@ -24,12 +24,14 @@ A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy
 You can create links which will automatically display a specific message by adding parameters to the URL. 
 
 Examples:
-> NAVADMIN 104/2020 ▶ https://navadmin-viewer.github.io/view-message/?type=NAVADMIN&year=2020&number=104
+> NAVADMIN 104/2020 ▶ https://navadmin-viewer.github.io/?type=NAVADMIN&year=2020&number=104
 > 
-> ALNAV 038/2020 ▶ https://navadmin-viewer.github.io/view-message/?type=ALNAV&year=2020&number=38
+> ALNAV 038/2020 ▶ https://navadmin-viewer.github.io/?type=ALNAV&year=2020&number=38
+> 
+> NAVADMIN 188/2020 (with redirect to installed app) ▶ https://navadmin-viewer.github.io/view-message/?type=NAVADMIN&year=2020&number=188
 
 **Tip:**
-*Adding `/view-message/?` path at the end of the URL before parameters will automatically launch the native NAVADMIN Viewer iOS and Android apps if installed.*
+*Adding `/view-message/?` path at the end of the URL before parameters will automatically launch the native NAVADMIN Viewer iOS and Android apps if installed. The page will be redirected to the `/` path before displaying the message on Desktop and if no app installs are detected.*
 
 Parameter | Allowed Values | Description
 --- | --- | --- 

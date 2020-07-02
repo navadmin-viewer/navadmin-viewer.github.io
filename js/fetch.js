@@ -196,6 +196,15 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   });
 }
 
+function createYearDirectLink(msgType, msgYear, redirection) {
+  var shareLink = shareServer + (redirection ? '/view-message/' : '/');
+  shareLink += '?type=';
+  shareLink += msgTypeToString(msgType);
+  shareLink += '&year=';
+  shareLink += msgYear;
+  return shareLink;
+}
+
 function createMessageDirectLink(msgType, msgYear, msgNumber, redirection) {
   var shareLink = shareServer + (redirection ? '/view-message/' : '/');
   shareLink += '?type=';

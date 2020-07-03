@@ -129,7 +129,7 @@ function setFilterMsgTypeDropdown(msgTypes) {
   }
 
   for (var i = 0; i < msgTypes.length; i++) {
-    var a = $('<a>', { 'class': 'dropdown-item' });
+    var a = $('<a>', { 'class' : 'dropdown-item', 'href' : createMsgTypeDirectLink(msgTypes[i])});
     a.text(msgTypeToString(msgTypes[i]));
     a.click(createHandler(msgTypes[i]));
     $('#msg-type-dropdown-menu').append(a);

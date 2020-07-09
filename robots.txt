@@ -1,0 +1,3 @@
+user-agent: *
+disallow: /privacy.html
+sitemap: https://admin-message.herokuapp.com/sitemap

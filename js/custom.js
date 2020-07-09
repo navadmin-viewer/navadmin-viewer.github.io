@@ -210,6 +210,8 @@ function setTableMessages(msgType, msgYear) {
     return;
   }
 
+  document.title = msgTypeToString(msgType) + ' ' + msgYear + ' - NAVADMIN Viewer';
+
   for (var i = msg.length - 1; i >= 0; i--) {
     m = msg[i];
     var tr = $("<tr>", {});
@@ -320,6 +322,13 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
   msgModalTitle.text(messageSelectorText + (title ? ' - ' + title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
   msgModalBody.text(body);
   msgModal.modal('show');
+
+  //Set page title to reflect current contents
+  document.title = msgModalTitle.text() + ' - NAVADMIN Viewer';
+
+  msgModal.on('hide.bs.modal', function (e) {
+    document.title = msgTypeToString(userSelectedMsgType) + ' ' + userSelectedMsgYear + ' - NAVADMIN Viewer';
+  })
 
   if (typeof analytics !== 'undefined') {
     //Log Viewed Message event

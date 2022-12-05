@@ -55,14 +55,26 @@ function setCookie(cname, cvalue, exdays) {
   document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
 
-//Serialization/Deserialzation of nested map in local storage
-//https://stackoverflow.com/a/51221692/761902
-Map.prototype.toJSON = function() {
-  return ['window.Map', Array.from(this.entries())];
-};
-Map.fromJSON = function(key, value) {
-  return (value instanceof Array && value[0] == 'window.Map') ?
-      new Map(value[1]) :
-      value
-  ;
-};
+function isLocalStorageSupported() {
+  var mod = 'nv'
+  try {
+    localStorage.setItem(mod, mod);
+    localStorage.removeItem(mod);
+    return true;
+  } catch(e) {
+      return false;
+  }
+}
+
+function saveCacheToLocalStorage() {
+  if (cachedMessages) {
+    try {
+      localStorage.setItem(cachedMessagesLocalStorageKey, serializeMap(cachedMessages))
+      return true;
+    } catch (e) {
+      console.log('Unable to store messages:', e);
+      return false;
+    }
+  }
+  return false;
+}

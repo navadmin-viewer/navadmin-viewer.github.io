@@ -5,6 +5,8 @@ var availableMsgTypes = [
   MsgType.ALMAR
 ];
 
+var cachedMessagesLocalStorageKey = 'nv-cachedMessages'
+
 var urlParamMsgType = MsgType.UNKNOWN;
 var urlParamMsgYear = -1;
 var urlParamMsgNumber = -1;
@@ -55,8 +57,25 @@ $(document).ready(function() {
     }
   } 
   
+  //Load previously stored messages from local storage
+  if (isLocalStorageSupported()) {
+    cachedMessages = deserializeMapString(localStorage.getItem(cachedMessagesLocalStorageKey))
+    if (cachedMessages) {
+      setTableMessages(availableMsgTypes[0], cachedMessages.get(availableMsgTypes[0]).length ? [...cachedMessages.get(availableMsgTypes[0]).keys()][0] : -1); 
+    }
+  }
+
+  //Attach visibilitychange handler for triggering storage of messages to local storage
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === 'hidden') {
+      console.log('save')
+      saveCacheToLocalStorage()
+    }
+  });
+
   setFilterMsgTypeDropdown(availableMsgTypes);
   setUIInLoadingStatus(true, "Getting available messages");
+
 
   function getMessageYearsAndMetadata() {
     return function() {
@@ -94,15 +113,17 @@ $(document).ready(function() {
 });
 
 function setUIInLoadingStatus(disable, statusText) {
+  console.log(disable, statusText)
   if (disable) {
     loadingProgress.removeClass('bg-warning');
     loadingProgress.show(loadingProgressHideShowDuration);
     loadingProgress.find('div').text(statusText);
   } else {
     if (statusText && statusText.length > 0) {
-      loadingProgress.add('bg-warning');
+      loadingProgress.find('div').addClass('bg-danger');
+      console.log('run')
     } else {
-      loadingProgress.removeClass('bg-warning');
+      loadingProgress.find('div').removeClass('bg-warning');
       loadingProgress.hide(loadingProgressHideShowDuration);
     }
     loadingProgress.find('div').text(statusText);
@@ -110,7 +131,7 @@ function setUIInLoadingStatus(disable, statusText) {
 }
 
 /**
- * Set the message table contents.
+ * Set the message type filter dropdown menu contents.
  * @param {MsgType[]} msgTypes Array of message types to set in the message type filter dropdown menu. 
  */
 function setFilterMsgTypeDropdown(msgTypes) {

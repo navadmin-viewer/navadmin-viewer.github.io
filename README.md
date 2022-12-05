@@ -6,12 +6,12 @@ A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy
 
 [![NAVADMIN Viewer web screenshot](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/navadmin-viewer-web-screenshot.png)](https://navadmin-viewer.github.io/)
 
-## Browser support tested 15APR2020
+## Browser support tested 04DEC2022
 
 ![Chrome](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/chrome_48x48.png) | ![IE 11](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/internet-explorer_9-11_48x48.png) | ![Edge](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/edge_12-18_48x48.png) | ![Safari](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/safari_48x48.png)| ![Firefox](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/firefox_48x48.png) 
 --- | --- | --- | --- | --- 
  Chrome | IE 11 | Edge | Safari | Firefox 
- 80 ✔ | 11 ✔ | 44 ✔ | 13 ✔ | 75 ✔ 
+ 104 ✔ | 11 ✔ | 44 ✔ | 13 ✔ | 75 ✔ 
 
 ## How to use
 

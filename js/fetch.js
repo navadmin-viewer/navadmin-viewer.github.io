@@ -173,7 +173,7 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
     } else {
       var cachedMsg = cachedMessages ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
       if (cachedMsg)
-        cachedMsg.body = data;
+        cachedMsg.Body = data;
       //If the retrieved msg type is the currently the user selected message type or url passed message, show it.
       if (
         (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||

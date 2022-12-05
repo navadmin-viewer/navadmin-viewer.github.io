@@ -24,7 +24,7 @@ function deserializeMapString(ms) {
   //map is passed in as array where each item in the array is another array of size two [0]=key, [1]=value
   function mapArrayToMap(inputMapArray) {
       var retMap = new Map()
-      inputMapArray.forEach((v) => {
+      inputMapArray.forEach(function(v, k) {
       retMap.set(v[0], v[1] instanceof Array ? arrayToMap(v[1]): v[1])
       })
       return retMap

@@ -61,17 +61,21 @@ $(document).ready(function() {
   if (isLocalStorageSupported()) {
     cachedMessages = deserializeMapString(localStorage.getItem(cachedMessagesLocalStorageKey))
     if (cachedMessages) {
-      setTableMessages(availableMsgTypes[0], cachedMessages.get(availableMsgTypes[0]).length ? [...cachedMessages.get(availableMsgTypes[0]).keys()][0] : -1); 
+      setTableMessages(availableMsgTypes[0], cachedMessages.get(availableMsgTypes[0]).length ? Array.from(cachedMessages.get(availableMsgTypes[0]).keys())[0] : -1); 
     }
   }
 
-  //Attach visibilitychange handler for triggering storage of messages to local storage
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === 'hidden') {
-      console.log('save')
-      saveCacheToLocalStorage()
-    }
-  });
+  try {
+    //Attach visibilitychange handler for triggering storage of messages to local storage
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === 'hidden') {
+        console.log('save')
+        saveCacheToLocalStorage()
+      }
+    });
+  } catch (e) {
+    console.log('Could not add event listener for visibilitychange', e);
+  }
 
   setFilterMsgTypeDropdown(availableMsgTypes);
   setUIInLoadingStatus(true, "Getting available messages");
@@ -299,8 +303,8 @@ function setTableMessages(msgType, msgYear) {
 
         //Check if current message exists in cache
         var cachedMsg = cachedMessages ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
-        if (cachedMsg && cachedMsg.body && cachedMsg.body.length > 0)
-          showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.body);
+        if (cachedMsg && cachedMsg.Body && cachedMsg.Body.length > 0)
+          showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.Body);
         else
           getMsgBody(msgType, msgYear, msgNumber, createCompletionHandler(tr));
       };

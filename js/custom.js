@@ -133,6 +133,16 @@ $(document).ready(function() {
 
   msgModalShare.click(shareUserSelectedMessageLink);
 
+  //Hide modal on backspace
+  $(document).on('keydown', function(event) {
+    if (event.keyCode === 8) {
+      if (msgModal) {
+        msgModal.modal('hide')
+      }
+      event.preventDefault(); // Prevent default backspace action if needed
+    }
+  });
+
   // Check for broadcast
   getBroadcast(null)
 });

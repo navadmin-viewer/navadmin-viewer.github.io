@@ -6,9 +6,10 @@ var shareServer = 'https://navadmin-viewer.github.io';
  * @param {MsgType} msgType The message type to years for. 
  * @param {number[]} yearsToGetMetadata The message years to get metadata for and year to set the table contents to on request completion.
  * @param {boolean} getLatestYearMetadata Indicate whether another request should be initiated to get the latest retrieved year metadata from server.
+ * @param {function} completionHandler Completion handler to run after request completes.
  */
 function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, completionHandler) {
-  console.log('Network fetch request received for ' + msgTypeToString(msgType) + ' ' + yearsToGetMetadata + ' ' + getLatestYearMetadata + ' ' + completionHandler);
+  console.log('Network fetch request received for ' + msgTypeToString(msgType) + ' ' + (yearsToGetMetadata ? yearsToGetMetadata : '[]') + ' ' + getLatestYearMetadata + ' ' + (completionHandler ? 'completionHandler' : 'no completionHander'));
   var postData = '';
   postData += 'type=';
   postData += msgTypeToString(msgType);
@@ -84,9 +85,51 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
       yearsMsgsDesc.set(yearInts[i], yearsMsgs.get(yearInts[i]));
     }
 
-    if (!cachedMessages)
+    // Cached year count does not match retrieved year count
+    if (cachedMessages && cachedMessages.get(msgType) && cachedMessages.get(msgType).size != yearsMsgsDesc.size) {
+      // TODO: Add only the missing years
+      console.log('Cached ' + msgTypeToString(msgType) + ' year count ' + cachedMessages.get(msgType).size + ' does not match server year count ' + yearsMsgsDesc.size + '. Reset cache for that message type.')
+
+      // Add missing years to cache (we go the other way around because the other map is sorted)
+      cachedMessages.get(msgType).forEach(function(v, k) {
+        console.log('Move year ' + k + ' data from cache to sorted map');
+        yearsMsgsDesc.set(k, v)
+      });
+
+      // Overwrite entire year cache from the sorted map
+      console.log('Overwrite ' + msgTypeToString(msgType) + ' from sorted map');
+      cachedMessages.set(msgType, yearsMsgsDesc);
+    }
+
+    // Cached data does not have this message type. Set years for the message type
+    if (cachedMessages && !cachedMessages.get(msgType)) {
+      console.log('Cache new map entry for ' + msgTypeToString(msgType))
+      cachedMessages.set(msgType, yearsMsgsDesc);
+    }
+
+    // Update message metadata for each year of the retrieved message type
+    if (cachedMessages && cachedMessages.get(msgType)) {
+      cachedMessages.get(msgType).forEach(function(_, y) {
+        if ((!cachedMessages.get(msgType).get(y) && yearsMsgsDesc.get(y)) || (cachedMessages.get(msgType).get(y) && yearsMsgsDesc.get(y) && cachedMessages.get(msgType).get(y).length < yearsMsgsDesc.get(y).length)) {
+          console.log('Cached ' + msgTypeToString(msgType) + ' ' + y +' msg count ' + (cachedMessages.get(msgType).get(y) ? cachedMessages.get(msgType).get(y).length : 'null') + ' does not match server year count ' + yearsMsgsDesc.get(y).length + '.');
+          if (cachedMessages.get(msgType).get(y)) {
+            for (var i = cachedMessages.get(msgType).get(y).length; i < yearsMsgsDesc.get(y).length; i++) {
+              console.log('Push message ' + i + ' metadata to cache');
+              cachedMessages.get(msgType).get(y).push(yearsMsgsDesc.get(y)[i]);
+            }
+          } else {
+            cachedMessages.get(msgType).set(y, yearsMsgsDesc.get(y));
+          }
+          
+        }
+      });
+    }
+
+    if (!cachedMessages) {
+      console.log('Create new cached messages variable')
       cachedMessages = new Map();
-    cachedMessages.set(msgType, yearsMsgsDesc);
+      cachedMessages.set(msgType, yearsMsgsDesc);
+    }
 
     /*
     //Unsupported DESC sort in IE 11 :(
@@ -103,22 +146,26 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
       setUIInLoadingStatus(true, 'Getting messages data');
       getYearsForMsgType(msgType, [yearInts[0]], false, null);
     } else {
-      setUIInLoadingStatus(false, null);
+      //setUIInLoadingStatus(false, null);
     }
 
-    if (userSelectedMsgType == msgType) {
-      setFilterMsgYearDropdown(msgType, yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1);
-      //setTableMessages will actually start another msg metadata fetch for the latest year on first load because the data is not stored in memory yet,
-      //but this second request will not conflict with the previous follow up network request for metadata because it will be detected as duplicate
-      setTableMessages(msgType, yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1); 
+    
+    // if (userSelectedMsgType == msgType) {
+    //   setInterfaceYear = userSelectedMsgYear == -1 ? (yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1) : userSelectedMsgYear
+    //   console.log('calling setFilterMsgYearDropdown' + (setInterfaceYear)+ ' from getYearsForMsgType' + msgTypeToString(msgType) + ' ' + yearsToGetMetadata + ' ' + getLatestYearMetadata + ' ' + completionHandler);
+    //   setFilterMsgYearDropdown(msgType, setInterfaceYear);
+    //   //setTableMessages will actually start another msg metadata fetch for the latest year on first load because the data is not stored in memory yet,
+    //   //but this second request will not conflict with the previous follow up network request for metadata because it will be detected as duplicate
+    //   console.log('calling setTableMessages' + (setInterfaceYear)+ ' from getYearsForMsgType' + msgTypeToString(msgType) + ' ' + yearsToGetMetadata + ' ' + getLatestYearMetadata + ' ' + completionHandler);
+    //   setTableMessages(msgType, setInterfaceYear); 
 
-      /*
-      //All years
-      cachedMessages.get(msgType).forEach(function (v, k) {
-        setTableMessages(cachedMessages.get(msgType).get(k))
-      });
-      */
-    }
+    //   /*
+    //   //All years
+    //   cachedMessages.get(msgType).forEach(function (v, k) {
+    //     setTableMessages(cachedMessages.get(msgType).get(k))
+    //   });
+    //   */
+    // }
   });
   request.fail(function(jqXHR, textStatus, errorThrown) {
     console.log("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
@@ -171,7 +218,9 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
       msgModalTitle.text(messageSelectorText);
       msgModalBody.text('Data is unavailable.' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
     } else {
-      var cachedMsg = cachedMessages ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
+      var cachedMsgType = cachedMessages ? cachedMessages.get(msgType) : null;
+      var cachedMsgYear = cachedMsgType ? cachedMsgType.get(msgYear) : null;
+      var cachedMsg = cachedMsgYear ? cachedMsgYear[msgNumber - 1] : null;
       if (cachedMsg)
         cachedMsg.Body = data;
       //If the retrieved msg type is the currently the user selected message type or url passed message, show it.
@@ -214,13 +263,22 @@ function createYearDirectLink(msgType, msgYear, redirection) {
 
 function createMessageDirectLink(msgType, msgYear, msgNumber, redirection) {
   var shareLink = shareServer + (redirection ? '/view-message/' : '/');
-  shareLink += '?type=';
-  shareLink += msgTypeToString(msgType);
-  shareLink += '&year=';
-  shareLink += msgYear;
-  shareLink += '&number=';
-  shareLink += msgNumber;
+  shareLink += createURLParameters(msgType, msgYear, msgNumber);
   return shareLink;
+}
+
+function createURLParameters(msgType, msgYear, msgNumber) {
+  var params = '?type=';
+  params += msgTypeToString(msgType);
+  if (msgYear >= 0) {
+    params += '&year=';
+    params += msgYear;
+  }
+  if (msgNumber >= 0) {
+    params += '&number=';
+    params += msgNumber;
+  }
+  return params;
 }
 
 /**

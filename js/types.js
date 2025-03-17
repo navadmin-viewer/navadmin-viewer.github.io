@@ -35,3 +35,5 @@ function stringToMsgType(mts) {
       return MsgType.UNKNOWN;
   }
 }
+
+var NAVADMIN_VIEWER_TITLE = 'NAVADMIN Viewer App'

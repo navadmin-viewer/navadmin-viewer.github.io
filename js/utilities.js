@@ -78,3 +78,32 @@ function saveCacheToLocalStorage() {
   }
   return false;
 }
+
+function latestYearForMsgType(msgType) {
+  if (!cachedMessages || !cachedMessages.get(msgType)) {
+    return -1;
+  }
+
+  var ly = -1;
+  cachedMessages.get(msgType).forEach(function(v, k) {
+    if (ly == -1)
+      ly = k;
+  });
+  return ly;
+}
+
+function shortNameForMessage(msgType, msgYear, msgNumber) {
+  var shortName = msgTypeToString(msgType) + ' ';
+  if (msgNumber > 0) {
+    shortName += pad(msgNumber, 3) + '/';
+  }
+  if (msgYear > 0) {
+    if (msgNumber > 0) {
+      shortName += (msgYear % 1000).toString();
+    } else {
+      shortName += msgYear.toString();
+    }
+    
+  }
+  return shortName
+}

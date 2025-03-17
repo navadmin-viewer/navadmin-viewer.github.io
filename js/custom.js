@@ -61,7 +61,7 @@ $(document).ready(function() {
   if (isLocalStorageSupported()) {
     cachedMessages = deserializeMapString(localStorage.getItem(cachedMessagesLocalStorageKey))
     if (cachedMessages) {
-      setTableMessages(availableMsgTypes[0], cachedMessages.get(availableMsgTypes[0]).length ? Array.from(cachedMessages.get(availableMsgTypes[0]).keys())[0] : -1); 
+      //setTableMessages(availableMsgTypes[0], cachedMessages.get(availableMsgTypes[0]).length ? Array.from(cachedMessages.get(availableMsgTypes[0]).keys())[0] : -1); 
     }
   }
 
@@ -78,18 +78,29 @@ $(document).ready(function() {
   }
 
   setFilterMsgTypeDropdown(availableMsgTypes);
+  setFilterMsgYearDropdown(userSelectedMsgType, userSelectedMsgYear);
+  setTableMessages(userSelectedMsgType, userSelectedMsgYear);
   setUIInLoadingStatus(true, "Getting available messages");
 
 
   function getMessageYearsAndMetadata() {
     return function() {
-      getYearsForMsgType(
+      getYearsForMsgType( // Get years for message type
         userSelectedMsgType, 
         [], 
-        userSelectedMsgYear == -1 , 
-        userSelectedMsgYear > -1 ? function() {
-          getYearsForMsgType(userSelectedMsgType, userSelectedMsgYear > -1 ? [userSelectedMsgYear] : [], false, null)
-        } : null
+        userSelectedMsgYear == -1, 
+        function() {
+          if (!setFilterMsgYearDropdown(userSelectedMsgType, userSelectedMsgYear)) { console.log("getMessageYearsAndMetadata > fetch > completionHandler > setFilterMsgYearDropdown did not have data to complete.") }
+          
+          getYearsForMsgType( //Get message metadata for the user selected year or latest year
+            userSelectedMsgType, 
+            [userSelectedMsgYear > -1 ? userSelectedMsgYear : latestYearForMsgType(userSelectedMsgType)], 
+            false, 
+            function() {
+              if (!setTableMessages(userSelectedMsgType, userSelectedMsgYear)) { console.log("getMessageYearsAndMetadata > fetch > completionHandler > fetch > completionHandler > setTableMessages did not have data to complete.")}
+            }
+          )
+        }
       );
     }
   }
@@ -116,6 +127,11 @@ $(document).ready(function() {
   msgModalShare.click(shareUserSelectedMessageLink);
 });
 
+/**
+ * Set UI loading status
+ * @param {boolean} disable Show UI as loading. 
+ * @param {string} statusText Status text.
+ */
 function setUIInLoadingStatus(disable, statusText) {
   console.log(disable, statusText)
   if (disable) {
@@ -139,19 +155,86 @@ function setUIInLoadingStatus(disable, statusText) {
  * @param {MsgType[]} msgTypes Array of message types to set in the message type filter dropdown menu. 
  */
 function setFilterMsgTypeDropdown(msgTypes) {
-  $('#msg-type-dropdown-menu').empty();
+  console.log('setFilterMsgTypeDropdown' + String(msgTypes));
 
   //Create click handler for filter msg type
   function createHandler(msgType) {
-    return function(e) {
+    return function filterMsgTypeClickHandler(e) {
       e.preventDefault(); // cancel the link behaviour
-      $("#msg-type-dropdown").text(msgTypeToString(msgType));
       userSelectedMsgType = msgType;
-      setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
+      userSelectedMsgYear = -1;
+      $("#msg-type-dropdown").text(msgTypeToString(msgType));
       $("#msg-search-input").val('');
-      setTableMessages(msgType, userSelectedMsgYear);
+
+      // Call this if we need to get message metadata
+      function getMessageMetadata() {
+        console.log('Calling getYearsForMsgType from ' + arguments.callee.name);
+        var ly = latestYearForMsgType(msgType)
+        if (ly == -1) {
+          console.log('No latest year for ' + msgTypeToString(msgType));
+          return;
+        }
+        getYearsForMsgType(
+          msgType, 
+          [ly], 
+          false, 
+          function () {
+            if (userSelectedMsgType == msgType && userSelectedMsgYear == ly) {
+              console.log('Calling setTableMessages from setFilterMsgTypeDropdown > clickHandler > fetch > completionHandler > fetch > completionHandler');
+              setTableMessages(msgType, userSelectedMsgYear);
+            }
+          }
+        );
+      }
+
+      console.log('Calling setFilterMsgYearDropdown from ' + arguments.callee.name);
+      var cachedYearDataExists = setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
+      if (!cachedYearDataExists) {
+        getYearsForMsgType(
+          msgType, 
+          [], 
+          false, 
+          function() {
+            getMessageMetadata();
+            console.log('Calling setFilterMsgYearDropdown from setFilterMsgTypeDropdown > clickHandler > fetch > completionHandler');
+            setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
+          }
+        )
+        setUIInLoadingStatus(true, null);
+        return;
+      }
+      
+
+      console.log('Calling setTableMessages from ' + arguments.callee.name);
+      var cachedMessageDataExists = setTableMessages(msgType, userSelectedMsgYear);
+      if (!cachedMessageDataExists) {
+        getMessageMetadata();
+        setUIInLoadingStatus(true, null);
+        return;
+      }
+
+      var cachedYearCount = cachedMessages.get(msgType).size;
+
+      // Get updated years in background. Only update years dropdown if user has still selected this message type.
+      getYearsForMsgType(
+        msgType, 
+        [], 
+        false, 
+        function() {
+          if (userSelectedMsgType == msgType && cachedYearCount != cachedMessages.get(msgType).size) {
+            console.log('Calling setFilterMsgYearDropdown from setFilterMsgTypeDropdown > clickHandler > fetch > completionHandler');
+            setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
+          }
+
+          if (!cachedMessageDataExists) {
+            getMessageMetadata()
+          }
+        }
+      );
     };
   }
+
+  $('#msg-type-dropdown-menu').empty();
 
   for (var i = 0; i < msgTypes.length; i++) {
     var a = $('<a>', { 'class' : 'dropdown-item', 'href' : createMsgTypeDirectLink(msgTypes[i])});
@@ -165,28 +248,57 @@ function setFilterMsgTypeDropdown(msgTypes) {
 
 /**
  * Set the msg year filter dropdown elements and dropdown button title.
+ * This should be followed by setTableMessages() if the message metadata for that year exists.
  * @param {MsgType} msgType The message type to add dropdown menu year elements for. 
  * @param {number} msgYear The message year to set as the dropdown button title. Pass -1 to set title to latest message year.
+ * @returns {bool} Return if message year data was available.
  */
 function setFilterMsgYearDropdown(msgType, msgYear) {
-  $('#msg-year-dropdown-menu').empty();
-
-  var cachedMessageTypeYears = cachedMessages.get(msgType);
+  console.log('setFilterMsgYearDropdown' + msgTypeToString(msgType) + ' ' + msgYear);
 
   //Create click handler for filter msg year
   function createHandler(msgType, msgYear) {
-    return function(e) {
+    return function filterMsgYearClickHandler(e) {
       e.preventDefault(); // cancel the link behaviour
       userSelectedMsgType = msgType;
-      userSelectedYear = msgYear;
+      userSelectedMsgYear = msgYear;
       $("#msg-year-dropdown").text(msgYear);
       $("#msg-type-dropdown").text(msgTypeToString(msgType));
       $("#msg-search-input").val('');
-      setTableMessages(msgType, msgYear);
+
+      console.log('Calling setTableMessages from ' + arguments.callee.name);
+      if (!setTableMessages(msgType, msgYear)) {
+        getYearsForMsgType(
+          msgType, 
+          [msgYear], 
+          false, 
+          function filterMsgYearClickHandlerFetchCompletionHandler() {
+            console.log('Calling setTableMessages from ' + arguments.callee.name);
+            setTableMessages(msgType, msgYear);
+          }
+        );
+        setUIInLoadingStatus(true, null);
+        return;
+      }
+
+      // Get updated message metadata in background. Only update messages table if user has still selected this message type and year and number of messages has changed.
+      var cachedYearMessageCount = cachedMessages.get(msgType).get(msgYear).length;
+      getYearsForMsgType(
+        msgType, 
+        [msgYear], 
+        false, 
+        function filterMsgYearClickHandlerFetchCompletionHandler() {
+          if (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && cachedYearMessageCount != cachedMessages.get(msgType).get(msgYear).length) {
+            console.log('Calling setTableMessages from ' + arguments.callee.name);
+            setTableMessages(msgType, msgYear);
+          }
+        });
     };
   }
 
-  if (cachedMessageTypeYears)
+  $('#msg-year-dropdown-menu').empty();
+
+  if (cachedMessages.get(msgType)) {
     cachedMessages.get(msgType).forEach(function(v, k) {
       var a = $('<a>', { 'class': 'dropdown-item', 'href': createYearDirectLink(msgType, k) });
       a.text(k);
@@ -197,45 +309,55 @@ function setFilterMsgYearDropdown(msgType, msgYear) {
       if (msgYear == -1)
         msgYear = k;
     });
-  else {
-    getYearsForMsgType(msgType, [], true, null);
-    setUIInLoadingStatus(true, null);
+  } else {
+    // getYearsForMsgType(msgType, [], true, null);
+    // setUIInLoadingStatus(true, null);
+    return false;
   }
 
-  userSelectedYear = msgYear;
+  userSelectedMsgYear = msgYear;
   $("#msg-year-dropdown").text(msgYear);
+  return true;
 }
 
 /**
  * Set the message table contents.
  * @param {MsgType} msgType The message type to show. 
  * @param {number} msgYear The message year to show. Pass -1 to set title to latest message year.
+ * @returns {bool} Return if message table data was available.
  */
 function setTableMessages(msgType, msgYear) {
+  console.log('setTableMessages' + msgTypeToString(msgType) + ' ' + msgYear);
+
+  document.title = shortNameForMessage(msgType, msgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
+  window.history.pushState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(msgType, msgYear));
+
   //If msgYear is -1, set the msgYear to the latest year for the message type.
   if (msgYear == -1) {
-    if (!cachedMessages.get(msgType)) {
-      getYearsForMsgType(msgType, [msgYear], false, null);
-      setUIInLoadingStatus(true, null);
-      return;
+    msgYear = latestYearForMsgType(msgType);
+    if (msgYear == -1) {
+      console.log('setTableMessages found no cached messsage data to use for -1 msgYear')
+      return false;
     }
-    cachedMessages.get(msgType).forEach(function(v, k) {
-      if (msgYear == -1)
-        msgYear = k;
-    });
   }
-  msg = cachedMessages.get(msgType).get(msgYear);
 
+  msg = null;
+  if (cachedMessages && cachedMessages.get(msgType)) {
+    msg = cachedMessages.get(msgType).get(msgYear);
+  }
+  
   $('#msg-list-table-body').empty();
 
   if (!msg) {
-    console.log('No msg array found for ' + msgTypeToString(msgType) + ' ' + msgYear + '. Creating new network request.');
-    getYearsForMsgType(msgType, [msgYear], false, null);
-    setUIInLoadingStatus(true, null);
-    return;
+    console.log('No msg array found for ' + msgTypeToString(msgType) + ' ' + msgYear + '. Should create new network request.');
+    // getYearsForMsgType(msgType, [msgYear], false, null);
+    // setUIInLoadingStatus(true, null);
+    return false;
+  } else {
+    console.log('Cached msg array found for ' + msgTypeToString(msgType) + ' ' + msgYear + '.');
+    // getYearsForMsgType(msgType, [msgYear], false, null);
+    // setUIInLoadingStatus(false, null);
   }
-
-  document.title = msgTypeToString(msgType) + ' ' + msgYear + ' - NAVADMIN Viewer';
 
   for (var i = msg.length - 1; i >= 0; i--) {
     m = msg[i];
@@ -316,12 +438,15 @@ function setTableMessages(msgType, msgYear) {
     //Store reference to tr element in message object inside global message cache
     m.tr = tr;
   };
+
+  setUIInLoadingStatus(false, null);
+  return true;
 }
 
 function msgFilterSearchInputChanged(e) {
   var searchTerm = $(this).val().toUpperCase();
   var searchRE = new RegExp('.*?' + searchTerm + '.*?\\s?', 'g');
-  var currentSearchArray = cachedMessages.get(userSelectedMsgType).get(userSelectedYear);
+  var currentSearchArray = cachedMessages.get(userSelectedMsgType).get(userSelectedMsgYear);
   currentSearchArray.forEach(function(v) {
     if (!searchRE.test(v.title))
       v.tr.hide();
@@ -343,16 +468,20 @@ function navigateToAppStore(e) {
 }
 
 function showMessageModal(msgType, msgYear, msgNumber, title, body) {
-  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber, 3) + '/' + (msgYear % 1000).toString();
-  msgModalTitle.text(messageSelectorText + (title ? ' - ' + title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
+  var messageViewText = shortNameForMessage(msgType, msgYear, msgNumber);
+  msgModalTitle.text(messageViewText + (title ? ' - ' + title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
   msgModalBody.text(body);
   msgModal.modal('show');
 
   //Set page title to reflect current contents
-  document.title = msgModalTitle.text() + ' - NAVADMIN Viewer';
+  document.title = msgModalTitle.text() + ' - ' + NAVADMIN_VIEWER_TITLE;
+
+  //Set window url to new message direct link parameters
+  window.history.pushState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
 
   msgModal.on('hide.bs.modal', function (e) {
-    document.title = msgTypeToString(userSelectedMsgType) + ' ' + userSelectedMsgYear + ' - NAVADMIN Viewer';
+    document.title = shortNameForMessage(userSelectedMsgType, userSelectedMsgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
+    window.history.pushState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(userSelectedMsgType, userSelectedMsgYear, -1));
   })
 
   if (typeof analytics !== 'undefined') {

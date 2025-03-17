@@ -66,7 +66,27 @@ function isLocalStorageSupported() {
   }
 }
 
-function saveCacheToLocalStorage() {
+function saveKeyValueToLocalStorage(k, v) {
+  try {
+    localStorage.setItem(k, atob(v));
+    return true;
+  } catch (e) {
+    console.log('Unable to store data:', e);
+    return false;
+  }
+}
+
+function getKeyValueFromLocalStorage(k) {
+  try {
+    localStorage.getItem(k);
+    return k;
+  } catch (e) {
+    console.log('Unable to get data:', e);
+    return false;
+  }
+}
+
+function saveCachedMessagesToLocalStorage() {
   if (cachedMessages) {
     try {
       localStorage.setItem(cachedMessagesLocalStorageKey, serializeMap(cachedMessages))

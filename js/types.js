@@ -36,4 +36,5 @@ function stringToMsgType(mts) {
   }
 }
 
-var NAVADMIN_VIEWER_TITLE = 'NAVADMIN Viewer App'
+var NAVADMIN_VIEWER_TITLE = 'NAVADMIN Viewer App';
+var COOKIE_VISITS = 'v';

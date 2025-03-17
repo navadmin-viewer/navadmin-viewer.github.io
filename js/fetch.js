@@ -1,6 +1,45 @@
 var server = 'https://navadmin-server.runs.io';
 var shareServer = 'https://navadmin-viewer.github.io';
 
+var networkRequestCooldownSeconds = 600
+
+function releaseActiveMetadataRequest(data, success) {
+  if (success) {
+    var d = new Date()
+    activeMetadataRequests.set(data, d.getTime() + networkRequestCooldownSeconds * 1000) //Save the next time this request will be allowed
+  } else {
+    activeMetadataRequests.delete(data); // Or clear it so next request is always allowed
+  }
+}
+
+function setActiveMetadataRequest(data) {
+  activeMetadataRequests.set(data, -1) // -1 means a request is in progress
+}
+
+/**
+ * Check if there is an active network request for specified data.
+ * @param {string} data The requested metadata
+ * @param {boolean} forceUpdate Should we 
+ * @returns {boolean} completionHandler Completion handler to run after request completes.
+ */
+function checkIfActiveMetadataRequestAllowed(data, forceUpdate) {
+  var nextTimeRequestAllowed = activeMetadataRequests.get(data)
+  if (!nextTimeRequestAllowed) {
+    return true
+  } else if (nextTimeRequestAllowed == -1) {
+    console.log('Identical fetch request for ' + data + ' already in progress. ')
+    return false
+  }
+
+  var d = new Date()
+  if (d.getTime() < nextTimeRequestAllowed) {
+    console.log('Fetch request for ' + data + ' will be allowed to next run in ' + (nextTimeRequestAllowed - d.getTime()) + 'ms')
+    return false
+  }
+
+  return true
+}
+
 /**
  * Get years info for a MsgType. Set the msg year filter dropdown elements and dropdown button title.
  * @param {MsgType} msgType The message type to years for. 
@@ -21,11 +60,12 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
     });
 
   //Check if we have an active request for the same data in progress already. 
-  if (activeMetadataRequests.get(postData)) {
-    console.log('Identical fetch request for ' + postData + ' already in progress. ')
-    return;
+  if (checkIfActiveMetadataRequestAllowed(postData)) {
+    setActiveMetadataRequest(postData);
   } else {
-    activeMetadataRequests.set(postData, 1);
+    if (completionHandler)
+      completionHandler();
+    return;
   }
 
   var request = $.ajax({
@@ -34,12 +74,12 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
     data: postData,
     dataType: "json",
     complete: function(jqXHR, textStatus) {
-      activeMetadataRequests.delete(postData);
       if (completionHandler)
         completionHandler();
     }
   });
   request.done(function(data, textStatus, jqXHR) {
+    releaseActiveMetadataRequest(postData, true);
     var dataObj = data;
     //Define alerting format for errors
     function parseMessagesError(error) {
@@ -169,6 +209,7 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
   });
   request.fail(function(jqXHR, textStatus, errorThrown) {
     console.log("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+    releaseActiveMetadataRequest(postData, false);
     setUIInLoadingStatus(false, "Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
   });
 }
@@ -189,10 +230,13 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   postData += msgNumber;
 
   //Check if we have an active request for the same data in progress already. 
-  if (activeMetadataRequests.get(postData))
+  if (checkIfActiveMetadataRequestAllowed(postData)) {
+    setActiveMetadataRequest(postData);
+  } else {
+    if (completionHandler)
+      completionHandler();
     return;
-  else
-    activeMetadataRequests.set(postData, 1);
+  }
 
   var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber, 3) + '/' + (msgYear % 1000).toString();
 
@@ -202,22 +246,22 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
     data: postData,
     dataType: "text",
     complete: function(jqXHR, textStatus) {
-      activeMetadataRequests.delete(postData);
       if (completionHandler)
         completionHandler();
     }
   });
   request.done(function(data, textStatus, jqXHR) {
-
-
     //Check request HTTP status
     if (jqXHR.status == 404 || data.length == 0) {
+      releaseActiveMetadataRequest(postData, false);
       msgModalTitle.text(messageSelectorText);
       msgModalBody.text('Message not found');
     } else if (jqXHR.status == 503) {
+      releaseActiveMetadataRequest(postData, false);
       msgModalTitle.text(messageSelectorText);
       msgModalBody.text('Data is unavailable.' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
     } else {
+      releaseActiveMetadataRequest(postData, true);
       var cachedMsgType = cachedMessages ? cachedMessages.get(msgType) : null;
       var cachedMsgYear = cachedMsgType ? cachedMsgType.get(msgYear) : null;
       var cachedMsg = cachedMsgYear ? cachedMsgYear[msgNumber - 1] : null;
@@ -240,8 +284,63 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   });
 
   request.fail(function(jqXHR, textStatus, errorThrown) {
+    releaseActiveMetadataRequest(postData, false);
     msgModalTitle.text(messageSelectorText);
     msgModalBody.text("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+  });
+}
+
+/**
+ * Get server broadcast and store/show it.
+ * @param {function} completionHandler Completion handler to run after request completes.
+ */
+function getBroadcast(completionHandler) {
+  activeRequestBroadcastKey = 'broadcast'
+
+  //Check if we have an active request for the same data in progress already. 
+  if (checkIfActiveMetadataRequestAllowed(activeRequestBroadcastKey)) {
+    setActiveMetadataRequest(activeRequestBroadcastKey);
+  } else {
+    if (completionHandler)
+      completionHandler();
+    return;
+  }
+
+  var request = $.ajax({
+    url: server + '/broadcast',
+    method: "GET",
+    data: null,
+    dataType: "text",
+    complete: function(jqXHR, textStatus) {
+      if (completionHandler)
+        completionHandler();
+    }
+  });
+  request.done(function(data, textStatus, jqXHR) {
+    //Check request HTTP status
+    if (jqXHR.status == 404 || data.length == 0) {
+      console.log('Broadcast - 404 or no data');
+      releaseActiveMetadataRequest(activeRequestBroadcastKey, true);
+    } else if (jqXHR.status == 503) {
+      console.log('Broadcast - Data is unavailable.' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
+      releaseActiveMetadataRequest(activeRequestBroadcastKey, false);
+    } else {
+      releaseActiveMetadataRequest(activeRequestBroadcastKey, true);
+      if (getCookie(COOKIE_VISITS) > 1 && isLocalStorageSupported() && getKeyValueFromLocalStorage(cachedBroadcastLocalStorageKey) != data) {
+        if (data.length > 0) {
+          alert(data);
+        }
+        console.log('Saving new broadcast.')
+        saveKeyValueToLocalStorage(cachedBroadcastLocalStorageKey, data);
+      } else {
+        console.log('Suppressing broadcast because no cookie or localstorage support or user has already seen this broadcast.')
+      }
+    }
+  });
+
+  request.fail(function(jqXHR, textStatus, errorThrown) {
+    releaseActiveMetadataRequest(activeRequestBroadcastKey, false);
+    console.log("Broadcast - Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
   });
 }
 
@@ -291,7 +390,7 @@ function sendViewActivity(msgType, msgYear, msgNumber) {
   var uuid = getCookie('uuid');
   if (uuid.length == 0) {
     uuid = uuidv4();
-    setCookie('uuid', uuid, 3650);
+    setCookie('uuid', uuid);
   }
   var postData = '';
   postData += 'deviceUUID=';

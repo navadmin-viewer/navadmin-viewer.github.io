@@ -6,6 +6,7 @@ var availableMsgTypes = [
 ];
 
 var cachedMessagesLocalStorageKey = 'nv-cachedMessages'
+var cachedBroadcastLocalStorageKey = 'nv-cachedBroadcast'
 
 var urlParamMsgType = MsgType.UNKNOWN;
 var urlParamMsgYear = -1;
@@ -60,17 +61,23 @@ $(document).ready(function() {
   //Load previously stored messages from local storage
   if (isLocalStorageSupported()) {
     cachedMessages = deserializeMapString(localStorage.getItem(cachedMessagesLocalStorageKey))
-    if (cachedMessages) {
-      //setTableMessages(availableMsgTypes[0], cachedMessages.get(availableMsgTypes[0]).length ? Array.from(cachedMessages.get(availableMsgTypes[0]).keys())[0] : -1); 
-    }
   }
+
+  // Increment visits in cookie
+  var visits = getCookie(COOKIE_VISITS);
+  if (visits.length == 0) {
+    visits = 1;
+  } else {
+    visits += 1;
+  }
+  setCookie(COOKIE_VISITS, visits);
 
   try {
     //Attach visibilitychange handler for triggering storage of messages to local storage
     document.addEventListener("visibilitychange", function() {
       if (document.visibilityState === 'hidden') {
         console.log('save')
-        saveCacheToLocalStorage()
+        saveCachedMessagesToLocalStorage()
       }
     });
   } catch (e) {
@@ -125,6 +132,9 @@ $(document).ready(function() {
   navAppLink.click(navigateToAppStore)
 
   msgModalShare.click(shareUserSelectedMessageLink);
+
+  // Check for broadcast
+  getBroadcast(null)
 });
 
 /**

@@ -340,7 +340,7 @@ function setTableMessages(msgType, msgYear) {
   console.log('setTableMessages' + msgTypeToString(msgType) + ' ' + msgYear);
 
   document.title = shortNameForMessage(msgType, msgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
-  window.history.pushState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(msgType, msgYear));
+  window.history.replaceState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(msgType, msgYear));
 
   //If msgYear is -1, set the msgYear to the latest year for the message type.
   if (msgYear == -1) {
@@ -507,11 +507,11 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
   document.title = msgModalTitle.text() + ' - ' + NAVADMIN_VIEWER_TITLE;
 
   //Set window url to new message direct link parameters
-  window.history.pushState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
+  window.history.replaceState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
 
   msgModal.on('hide.bs.modal', function (e) {
     document.title = shortNameForMessage(userSelectedMsgType, userSelectedMsgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
-    window.history.pushState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(userSelectedMsgType, userSelectedMsgYear, -1));
+    window.history.replaceState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(userSelectedMsgType, userSelectedMsgYear, -1));
   })
 
   if (typeof analytics !== 'undefined') {
@@ -531,3 +531,8 @@ function shareUserSelectedMessageLink(e) {
   var shareLink = createMessageDirectLink(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, true);
   window.prompt("Copy the below share link to clipboard (\u229e Ctrl+C / \uf8ff \u2318+C)", shareLink);
 }
+
+// $(window).on('popstate',function(event) {
+//   console.log("pop location: " + document.location);
+//   console.log(getUrlParameter(window.location.href, 'type'))
+// });

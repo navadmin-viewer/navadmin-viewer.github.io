@@ -402,12 +402,12 @@ function setTableMessages(msgType, msgYear) {
           actViewCount = v.actNumber;
       });
     }
-    if (actStarCount > -1 && actViewCount > -1) {
+    if (actStarCount > -1 || actViewCount > -1) {
       var divStats = $("<div>", { 'class': 'stats-box' });
       var pStars = $("<p>", {});
       var pViews = $("<p>", {});
-      pStars.text('\u2605\u00a0' + actStarCount);
-      pViews.text('\u00a0' + actViewCount);
+      pStars.text('\u2605\u00a0' + (actStarCount > -1 ? actStarCount : 0));
+      pViews.text('\u00a0' + (actViewCount > -1 ? actViewCount : 0));
       pViews.prepend($("<img>", { 'src': 'assets/eye.svg' }));
       divStats.append(pStars, pViews);
       tdStats.append(divStats);

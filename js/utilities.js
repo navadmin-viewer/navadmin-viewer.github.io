@@ -78,7 +78,7 @@ function saveKeyValueToLocalStorage(k, v) {
 
 function getKeyValueFromLocalStorage(k) {
   try {
-    return localStorage.getItem(k);
+    return btoa(localStorage.getItem(k));
   } catch (e) {
     console.log('Unable to get data:', e);
     return false;

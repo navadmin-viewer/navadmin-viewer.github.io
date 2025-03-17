@@ -308,7 +308,7 @@ function setFilterMsgYearDropdown(msgType, msgYear) {
 
   $('#msg-year-dropdown-menu').empty();
 
-  if (cachedMessages.get(msgType)) {
+  if (cachedMessages && cachedMessages.get(msgType)) {
     cachedMessages.get(msgType).forEach(function(v, k) {
       var a = $('<a>', { 'class': 'dropdown-item', 'href': createYearDirectLink(msgType, k) });
       a.text(k);

@@ -144,23 +144,26 @@
     </div>
   </div>
 
-  <script src="js/jquery-3.4.1.min.js"></script>
-  <script src="js/popper.min.js"></script>
-  <script src="js/bootstrap.min.js"></script>
+  <!-- External Dependency scripts -->
+  <script src="js/external/jquery-3.7.1.min.js"></script>
+  <script src="js/external/bootstrap.bundle.min.js"></script>
+
+  <!-- Internal scripts -->
   <script src="js/types.js"></script>
   <script src="js/utilities.js"></script>
   <script src="js/serialization.js"></script>
   <script src="js/fetch.js"></script>
   <script src="js/custom.js"></script>
-<!-- Recommended Firebase polyfill for IE11 -->
-<script src="js/core-js-polyfill.min.js"></script>
+
+  <!-- Recommended Firebase polyfill for IE11 -->
+  <script src="js/external/core-js-polyfill.min.js"></script>
 
   <!-- The core Firebase JS SDK is always required and must be listed first -->
-  <script src="https://www.gstatic.com/firebasejs/7.14.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.8.0/firebase-app-compat.js"></script>
 
   <!-- TODO: Add SDKs for Firebase products that you want to use
      https://firebase.google.com/docs/web/setup#available-libraries -->
-  <script src="https://www.gstatic.com/firebasejs/7.14.0/firebase-analytics.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.8.0/firebase-analytics-compat.js"></script>
 
   <script>
     // Your web app's Firebase configuration

@@ -1,12 +1,13 @@
 var server = 'https://navadmin-server.runs.io';
 var shareServer = 'https://navadmin-viewer.github.io';
 
-var networkRequestCooldownSeconds = 600
+// Server request throttling
+var serverRequestCooldownSeconds = 600
 
 function releaseActiveMetadataRequest(data, success) {
   if (success) {
     var d = new Date()
-    activeMetadataRequests.set(data, d.getTime() + networkRequestCooldownSeconds * 1000) //Save the next time this request will be allowed
+    activeMetadataRequests.set(data, d.getTime() + serverRequestCooldownSeconds * 1000) //Save the next time this request will be allowed
   } else {
     activeMetadataRequests.delete(data); // Or clear it so next request is always allowed
   }

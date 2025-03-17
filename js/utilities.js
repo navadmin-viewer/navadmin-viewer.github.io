@@ -68,7 +68,7 @@ function isLocalStorageSupported() {
 
 function saveKeyValueToLocalStorage(k, v) {
   try {
-    localStorage.setItem(k, atob(v));
+    localStorage.setItem(k, btoa(v));
     return true;
   } catch (e) {
     console.log('Unable to store data:', e);
@@ -78,7 +78,7 @@ function saveKeyValueToLocalStorage(k, v) {
 
 function getKeyValueFromLocalStorage(k) {
   try {
-    return btoa(localStorage.getItem(k));
+    return atob(localStorage.getItem(k));
   } catch (e) {
     console.log('Unable to get data:', e);
     return false;

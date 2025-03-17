@@ -42,3 +42,7 @@ footer {
   #messages-list {}
   #loading-progress {}
 }
+
+.offline-enabled {
+  color: #009432;
+}

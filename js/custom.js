@@ -375,7 +375,12 @@ function setTableMessages(msgType, msgYear) {
     var th = $("<th>", {});
     var td = $("<td>", {});
     var tdStats = $("<td>", {});
-    th.text(pad(m.number, 3) + '/' + (m.year % 1000).toString());
+    var msgNumAbbr = shortNameForMessage(-1, m.year, m.number)
+    th.text(msgNumAbbr);
+    th.attr('id', msgNumAbbr);
+    if (m.Body && m.Body.length > 0) {
+      th.addClass('offline-enabled')
+    }
 
     var messageTitle = m.title;
     if (m.title.length == 0) {
@@ -438,7 +443,22 @@ function setTableMessages(msgType, msgYear) {
         if (cachedMsg && cachedMsg.Body && cachedMsg.Body.length > 0)
           showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.Body);
         else
-          getMsgBody(msgType, msgYear, msgNumber, createCompletionHandler(tr));
+          getMsgBody(msgType, msgYear, msgNumber, function() {
+            createCompletionHandler(tr)
+            $('#'+shortNameForMessage(-1, msgYear, msgNumber).replace('/','\\/')).addClass('offline-enabled')
+            if (
+              (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||
+              (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)
+            ) {
+              showMessageModal(
+                msgType,
+                msgYear,
+                msgNumber,
+                (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : ''),
+                cachedMsg.Body
+              );
+            }
+        } );
       };
     }
     tr.click(createHandler(m.type, m.year, m.number));

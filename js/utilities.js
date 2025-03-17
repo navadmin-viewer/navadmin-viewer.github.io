@@ -112,7 +112,10 @@ function latestYearForMsgType(msgType) {
 }
 
 function shortNameForMessage(msgType, msgYear, msgNumber) {
-  var shortName = msgTypeToString(msgType) + ' ';
+  var shortName = '';
+  if (msgType > -1) {
+    shortName += msgTypeToString(msgType) + ' ';
+  }
   if (msgNumber > 0) {
     shortName += pad(msgNumber, 3) + '/';
   }

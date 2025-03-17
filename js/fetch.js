@@ -269,18 +269,18 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
       if (cachedMsg)
         cachedMsg.Body = data;
       //If the retrieved msg type is the currently the user selected message type or url passed message, show it.
-      if (
-        (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||
-        (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)
-      ) {
-        showMessageModal(
-          msgType,
-          msgYear,
-          msgNumber,
-          (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : ''),
-          data
-        );
-      }
+      // if (
+      //   (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||
+      //   (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)
+      // ) {
+      //   showMessageModal(
+      //     msgType,
+      //     msgYear,
+      //     msgNumber,
+      //     (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : ''),
+      //     data
+      //   );
+      // }
     }
   });
 

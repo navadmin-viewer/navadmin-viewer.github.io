@@ -2,6 +2,10 @@
 /* https://stackoverflow.com/a/10801889/761902 */
 html.wait, html.wait * { cursor: progress !important; }
 
+h1 {
+  display: none;
+}
+
 #main-container {
   padding-left: 0pt;
   padding-right: 0pt;

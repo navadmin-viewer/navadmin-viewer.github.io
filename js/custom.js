@@ -521,6 +521,8 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
     });
   }
 
+  document.querySelector('meta[name="description"]').setAttribute("content", title);
+
   sendViewActivity(msgType, msgYear, msgNumber);
 }
 

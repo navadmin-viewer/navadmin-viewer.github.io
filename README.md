@@ -2,24 +2,30 @@
 
 ## NAVADMIN Viewer web client
 
-A limited web client [demo](https://navadmin-viewer.github.io/) for viewing Navy and Marine Corps administrative messages.
+A (almost) fully featured web client [demo](https://navadmin-viewer.github.io/) for viewing Navy and Marine Corps administrative messages — a taste of the native apps.
 
 [![NAVADMIN Viewer web screenshot](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/navadmin-viewer-web-screenshot.png)](https://navadmin-viewer.github.io/)
 
-## Browser support tested 04DEC2022
+## 🌐 Browser support tested 17MAR2025
 
-![Chrome](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/chrome_48x48.png) | ![IE 11](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/internet-explorer_9-11_48x48.png) | ![Edge](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/edge_12-18_48x48.png) | ![Safari](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/safari_48x48.png)| ![Firefox](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/firefox_48x48.png) 
---- | --- | --- | --- | --- 
- Chrome | IE 11 | Edge | Safari | Firefox 
- 104 ✔ | 11 ✔ | 44 ✔ | 13 ✔ | 75 ✔ 
+![Chrome](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/chrome_48x48.png) | ![IE 11](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/internet-explorer_9-11_48x48.png) | ![Edge](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/edge_12-18_48x48.png) | ![Safari](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/safari_48x48.png)| ![Firefox](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/firefox_48x48.png) |
+--- | --- | --- | --- | --- |
+ Chrome | IE 11 | Edge | Safari | Firefox |
+ 133 ✔ | 11 ✔ | 134 (🪦 v44) ✔ | 13 ✔ | 75 ✔ |
 
-## How to use
+## 📝 How to use
 
 1. Go to [https://navadmin-viewer.github.io/](https://navadmin-viewer.github.io/).
 2. Select the message type and year to browse.
 3. Click the message you want to view.
 
-### Sharing link parameters
+## 📡 Offline mode (added 17MAR2025)
+
+The web app will cache viewed messages offline so that message data will be instantly available next time! Messages are not all auto-downloaded in bulk because internet browsers restrict the storage to 5 megabytes. 😥
+
+You can Save (Ctrl-S/Cmd-S) the main website to your computer to use when fully offline because some browsers may not load the online main page without an internet connection (even when the messages are already locally stored). Either save the main site locally or don't navigate away to another website while away from internet.
+
+### 🔗 Sharing link parameters
 
 You can create links which will automatically display a specific message by adding parameters to the URL. 
 
@@ -39,7 +45,7 @@ Parameter | Allowed Values | Description
 `year` | 20xx | The shared message year.
 `number` | xxx | The shared message number.
 
-### FAQ
+### ❔ FAQ
 
 - Is this an official government product?
  
@@ -57,7 +63,7 @@ Parameter | Allowed Values | Description
 
   Please let me know before you do. Data transfer costs me money. Don't ruin it for everyone.
 
-### Credits
+### 🎉 Credits
 
 All original code in NAVADMIN Viewer web client is available under terms of GPL-3.0.
 

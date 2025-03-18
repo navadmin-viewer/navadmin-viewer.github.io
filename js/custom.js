@@ -562,7 +562,6 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body, fromPopState
   //Set page title to reflect current contents
   document.title = msgModalTitle.text() + ' - ' + NAVADMIN_VIEWER_TITLE;
 
-  debugger
   msgModal.modal('show');
 
   //increment history state and depth if not triggered from a popstate (moving backwards in pop)
@@ -640,10 +639,8 @@ $(window).on('popstate',function(event) {
     msgModalClosed = true
   }
   
-  debugger
   //Decrement depth if modal not closed directly
   if (!msgModalClosed) {
-    debugger
     console.log('depth' + msgModalHistoryDepth)
     msgModalHistoryDepth -= 1
     console.log('depth' + msgModalHistoryDepth)
@@ -660,7 +657,6 @@ $(window).on('popstate',function(event) {
   } else {
     //Avoid double calling modal hide handler
     if (!msgModalClosed) {
-      debugger
       msgModal.modal('hide')
     }
 

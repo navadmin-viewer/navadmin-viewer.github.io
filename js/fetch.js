@@ -60,10 +60,14 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
       postData += year;
     });
 
+  //if (yearsToGetMetadata.length > 0)
+  //  debugger
+
   //Check if we have an active request for the same data in progress already. 
   if (checkIfActiveMetadataRequestAllowed(postData)) {
     setActiveMetadataRequest(postData);
   } else {
+    console.log('Network fetch request done for ' + msgTypeToString(msgType) + ' ' + (yearsToGetMetadata ? yearsToGetMetadata : '[]') + ' ' + getLatestYearMetadata + ' ' + (completionHandler ? 'completionHandler' : 'no completionHander'));
     if (completionHandler)
       completionHandler();
     return;
@@ -75,6 +79,7 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
     data: postData,
     dataType: "json",
     complete: function(jqXHR, textStatus) {
+      console.log('Network fetch request done for ' + msgTypeToString(msgType) + ' ' + (yearsToGetMetadata ? yearsToGetMetadata : '[]') + ' ' + getLatestYearMetadata + ' ' + (completionHandler ? 'completionHandler' : 'no completionHander'));
       if (completionHandler)
         completionHandler();
     }
@@ -234,6 +239,7 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
   if (checkIfActiveMetadataRequestAllowed(postData)) {
     setActiveMetadataRequest(postData);
   } else {
+    console.log('Fetch for getMsgBody completed')
     if (completionHandler)
       completionHandler();
     return;
@@ -247,6 +253,7 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
     data: postData,
     dataType: "text",
     complete: function(jqXHR, textStatus) {
+      console.log('Fetch for getMsgBody completed')
       if (completionHandler)
         completionHandler();
     }
@@ -266,8 +273,8 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
       var cachedMsgType = cachedMessages ? cachedMessages.get(msgType) : null;
       var cachedMsgYear = cachedMsgType ? cachedMsgType.get(msgYear) : null;
       var cachedMsg = cachedMsgYear ? cachedMsgYear[msgNumber - 1] : null;
-      if (cachedMsg)
-        cachedMsg.Body = data;
+
+      cachedMsg.Body = data;
       //If the retrieved msg type is the currently the user selected message type or url passed message, show it.
       // if (
       //   (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||

@@ -38,3 +38,6 @@ function stringToMsgType(mts) {
 
 var NAVADMIN_VIEWER_TITLE = 'NAVADMIN Viewer App';
 var COOKIE_VISITS = 'v';
+
+var reDocument = new RegExp("((DODM|UFC|DOD INSTRUCTION|DODINST|DODI|DODD|DTM|SECNAVINST|CNICINST|NAVREGS|NAVPERS|MILPERSMAN|OPNAVINST|BUPERSINST|JAGINST|MCO) [A-Z]*[- ]?[0-9]+[-.\/ ]?[0-9]*[A-Z]?[- ]?[V]?[0-9]*)", "gi");
+var reMessage = new RegExp("(NAVADMIN|ALNAV|MARADMIN|ALMAR) ([0-9]{3})\/([0-9]{2})", "g")

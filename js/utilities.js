@@ -129,3 +129,55 @@ function shortNameForMessage(msgType, msgYear, msgNumber) {
   }
   return shortName
 }
+
+function linkDocumentAndMessageReferences(body, excludeText) {
+  function createDocumentSearchLink(m) {
+    var link = $("<a>", { 'href': 'https://www.google.com/search?q=' + m[0] + ' site:gov OR site:mil OR site:us OR site:ansonliu.com OR navadmin-viewer.github.io' });
+    link.text(m[0])
+    return link
+  }
+
+  function createMessageLoadLink(m) {
+    var msgYear = 2000+parseInt(m[3])
+    var link = $("<a>", { 'href': false ? '#' : createMessageDirectLink(stringToMsgType(m[1]), msgYear, parseInt(m[2]), false) });
+    link.text(m[0])
+    var prepareAndShowMessageModalFunctionCall = 'prepareAndShowMessageModal(' + stringToMsgType(m[1]) + ',' + msgYear + ',' + parseInt(m[2]) + ',null);';
+    link.attr('onclick', 'event.preventDefault();' + prepareAndShowMessageModalFunctionCall + 'return false;')
+    return link
+  }
+
+  var matches = []
+  for (m of body.matchAll(reDocument)) {
+    m.replacementElement = createDocumentSearchLink(m)
+    matches.push(m)
+  }
+
+  for (m of body.matchAll(reMessage)) {
+    if (m[0] == excludeText)
+      continue
+
+    m.replacementElement = createMessageLoadLink(m)
+    matches.push(m)
+  }
+
+  // Sort matches by index in desc order
+  matches.sort(function(a, b) {
+    return b.index - a.index;
+  });
+
+  function replaceSubstring(originalString, startIndex, endIndex, replacement) {
+    return originalString.substring(0, startIndex) + replacement + originalString.substring(endIndex);
+  }
+
+  //console.log(matches)
+
+  for (var i = 0; i < matches.length; i++) {
+    var m = matches[i]
+    //console.log(m)
+    //console.log(m.replacementElement.prop('outerHTML'))
+    body = replaceSubstring(body, m.index, m.index+m[0].length, m.replacementElement.prop('outerHTML'))
+    //console.log(body)
+  }
+
+  return body
+}

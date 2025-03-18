@@ -142,14 +142,14 @@ $(document).ready(function() {
   msgModalShare.click(shareUserSelectedMessageLink);
 
   //Hide modal on backspace
-  $(document).on('keydown', function(event) {
-    if (event.keyCode === 8) {
-      if (msgModal) {
-        msgModal.modal('hide')
-      }
-      event.preventDefault(); // Prevent default backspace action if needed
-    }
-  });
+  // $(document).on('keydown', function(event) {
+  //   if (event.keyCode === 8) {
+  //     if (msgModal) {
+  //       msgModal.modal('hide')
+  //     }
+  //     event.preventDefault(); // Prevent default backspace action if needed
+  //   }
+  // });
 
   // Check for broadcast
   getBroadcast(null)
@@ -565,13 +565,18 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
   //Set window url to new message direct link parameters
   window.history.pushState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
 
-  if (msgModalHistoryDepth == 1) {
+  if (!msgModal.hideEventSet) {
+    // Avoid double setting modal hide handler
+    msgModal.hideEventSet = true
+
     msgModal.on('hide.bs.modal', function (e) {
       console.log('message modal hidden')
       document.title = shortNameForMessage(userSelectedMsgType, userSelectedMsgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
       window.history.go(-msgModalHistoryDepth)
       msgModalHistoryDepth = 0
+      msgModal.closing = true
       console.log(window.location.href)
+      
     })
   }
 
@@ -618,7 +623,7 @@ function navigateToAppStore(e) {
 }
 
 $(window).on('popstate',function(event) {
-  console.log('popstate' + window.location.href)
+  console.log('popstate ' + window.location.href)
   oldUserSelectedMsgType = userSelectedMsgType
   oldUserSelectedMsgYear = userSelectedMsgYear
   validateAndUseURLParams(window.location.href)
@@ -628,6 +633,13 @@ $(window).on('popstate',function(event) {
   
   if (userSelectedMsgType != MsgType.UNKNOWN && userSelectedMsgYear > -1 && userSelectedMsgNumber > -1) {
     prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null)
+  } else {
+    //Avoid double calling modal hide handler
+    if (msgModal.closing) {
+      msgModal.closing = false
+    } else {
+      msgModal.modal('hide')
+    }
   }
   
 });

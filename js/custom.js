@@ -109,7 +109,7 @@ $(document).ready(function() {
     getMessageYearsAndMetadata(
       null,
       function() {
-        prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null)
+        prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null, false)
       })
     
 
@@ -471,7 +471,7 @@ function setTableMessages(msgType, msgYear) {
     function createHandler(msgType, msgYear, msgNumber, row) {
       return function(e) {
         e.preventDefault(); // cancel the link behaviour
-        prepareAndShowMessageModal(msgType, msgYear, msgNumber, row)
+        prepareAndShowMessageModal(msgType, msgYear, msgNumber, row, false)
       };
     }
     tr.click(createHandler(m.type, m.year, m.number, tr));
@@ -493,7 +493,7 @@ function setTableMessages(msgType, msgYear) {
  * @param {number} msgNumber The message number to show.
  * @param {Element} row The message row to effect
  */
-function prepareAndShowMessageModal(msgType, msgYear, msgNumber, row) {
+function prepareAndShowMessageModal(msgType, msgYear, msgNumber, row, fromPopState) {
   if (row)
     row.css('cursor', 'progress');
   userSelectedMsgType = msgType;
@@ -519,7 +519,8 @@ function prepareAndShowMessageModal(msgType, msgYear, msgNumber, row) {
           msgYear,
           msgNumber,
           (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : 'No message data'),
-          (cachedMsg ? cachedMsg.Body : 'Error getting message data')
+          (cachedMsg ? cachedMsg.Body : 'Error getting message data'),
+          fromPopState
         );
       }
     } );
@@ -528,7 +529,7 @@ function prepareAndShowMessageModal(msgType, msgYear, msgNumber, row) {
   if (!cachedMessages || !cachedMessages.get(msgType) || !cachedMessages.get(msgType).get(msgYear)) { // We don't have the cache structure for the msg type or msg year
     getYearsForMsgType(msgType, [msgYear], true, function() {fetchAndShowMessage()})
   } else if (cachedMsg && cachedMsg.Body && cachedMsg.Body.length > 0) { // We have the full message already
-    showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.Body);
+    showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.Body, fromPopState);
   } else { //We have the cache structure ready but not the message
     fetchAndShowMessage();
   }
@@ -542,7 +543,7 @@ function prepareAndShowMessageModal(msgType, msgYear, msgNumber, row) {
  * @param {string} title The modal title
  * @param {string} body The modal body text
  */
-function showMessageModal(msgType, msgYear, msgNumber, title, body) {
+function showMessageModal(msgType, msgYear, msgNumber, title, body, fromPopState) {
   var messageViewText = shortNameForMessage(msgType, msgYear, msgNumber);
   msgModalTitle.text(messageViewText + (title ? ' - ' + title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
 
@@ -556,14 +557,20 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
     msgModalBody.text(body);
   }
   
-  msgModal.modal('show');
-  msgModalHistoryDepth += 1;
+  
 
   //Set page title to reflect current contents
   document.title = msgModalTitle.text() + ' - ' + NAVADMIN_VIEWER_TITLE;
 
-  //Set window url to new message direct link parameters
-  window.history.pushState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
+  debugger
+  msgModal.modal('show');
+
+  //increment history state and depth if not triggered from a popstate (moving backwards in pop)
+  if (!fromPopState) {
+    msgModalHistoryDepth += 1;
+    //Set window url to new message direct link parameters
+    window.history.pushState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
+  }
 
   if (!msgModal.hideEventSet) {
     // Avoid double setting modal hide handler
@@ -572,7 +579,8 @@ function showMessageModal(msgType, msgYear, msgNumber, title, body) {
     msgModal.on('hide.bs.modal', function (e) {
       console.log('message modal hidden')
       document.title = shortNameForMessage(userSelectedMsgType, userSelectedMsgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
-      window.history.go(-msgModalHistoryDepth)
+      if (msgModalHistoryDepth != 0) //If we back out with back button to the year view, the popstate handler will hide the modal which will trigger this handler. We don't want to reload the page when depth is 0
+        window.history.go(-msgModalHistoryDepth)
       msgModalHistoryDepth = 0
       msgModal.closing = true
       console.log(window.location.href)
@@ -624,22 +632,42 @@ function navigateToAppStore(e) {
 
 $(window).on('popstate',function(event) {
   console.log('popstate ' + window.location.href)
+
+  //Check if modal was closed directly
+  msgModalClosed = false
+  if (msgModal.closing) {
+    msgModal.closing = false
+    msgModalClosed = true
+  }
+  
+  debugger
+  //Decrement depth if modal not closed directly
+  if (!msgModalClosed) {
+    debugger
+    console.log('depth' + msgModalHistoryDepth)
+    msgModalHistoryDepth -= 1
+    console.log('depth' + msgModalHistoryDepth)
+  }
+  console.log('depth' + msgModalHistoryDepth)
+
   oldUserSelectedMsgType = userSelectedMsgType
   oldUserSelectedMsgYear = userSelectedMsgYear
   validateAndUseURLParams(window.location.href)
-  if (oldUserSelectedMsgType != userSelectedMsgType || oldUserSelectedMsgYear != userSelectedMsgYear) {
-    getMessageYearsAndMetadata()
-  }
-  
+
+  // Check if we need to show another modal
   if (userSelectedMsgType != MsgType.UNKNOWN && userSelectedMsgYear > -1 && userSelectedMsgNumber > -1) {
-    prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null)
+    prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null, true)
   } else {
     //Avoid double calling modal hide handler
-    if (msgModal.closing) {
-      msgModal.closing = false
-    } else {
+    if (!msgModalClosed) {
+      debugger
       msgModal.modal('hide')
     }
-  }
-  
+
+    // If no message modal shown, check if list needs to be refreshed
+    if (oldUserSelectedMsgType != userSelectedMsgType || oldUserSelectedMsgYear != userSelectedMsgYear) {
+      getMessageYearsAndMetadata()
+    }
+
+  }  
 });

@@ -131,6 +131,17 @@ function shortNameForMessage(msgType, msgYear, msgNumber) {
 }
 
 function linkDocumentAndMessageReferences(body, excludeText) {
+  function matchAll(str, re) {
+    re = new RegExp(re, 'g');
+    var match;
+    var matches = [];
+    
+    while (match = re.exec(str)) 
+      matches.push(match);
+      
+    return matches;
+  }
+
   function createDocumentSearchLink(m) {
     var link = $("<a>", { 'href': 'https://www.google.com/search?q=' + m[0] + ' site:gov OR site:mil OR site:us OR site:ansonliu.com OR navadmin-viewer.github.io' });
     link.text(m[0])
@@ -147,12 +158,18 @@ function linkDocumentAndMessageReferences(body, excludeText) {
   }
 
   var matches = []
-  for (m of body.matchAll(reDocument)) {
+  //for (m of body.matchAll(reDocument)) {
+  var docMatches = matchAll(body, reDocument)
+  for (var i = 0; i < docMatches.length; i++) {
+    m = docMatches[i]
     m.replacementElement = createDocumentSearchLink(m)
     matches.push(m)
   }
 
-  for (m of body.matchAll(reMessage)) {
+  //for (m of body.matchAll(reMessage)) {
+  var msgMatches = matchAll(body, reMessage)
+  for (var i = 0; i < msgMatches.length; i++) {
+    m = msgMatches[i]
     if (m[0] == excludeText)
       continue
 

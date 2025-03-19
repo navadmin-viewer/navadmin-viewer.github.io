@@ -1,8 +1,8 @@
 [![NAVADMIN Viewer icon](https://raw.githubusercontent.com/navadmin-viewer/recognizer/master/assets/Icon128.png)](https://apps.apple.com/us/app/navadmin-viewer/id1345135985)
 
-## NAVADMIN Viewer web client
+## NAVADMIN Viewer web app
 
-A (almost) fully featured web client [demo](https://navadmin-viewer.github.io/) for viewing Navy and Marine Corps administrative messages — a taste of the native apps.
+A fully featured [web app](https://navadmin-viewer.github.io/) for viewing Navy and Marine Corps administrative messages — a taste of the native apps.
 
 [![NAVADMIN Viewer web screenshot](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/navadmin-viewer-web-screenshot.png)](https://navadmin-viewer.github.io/)
 
@@ -39,29 +39,15 @@ Examples:
 **Tip:**
 *Adding `/view-message/?` path at the end of the URL before parameters will automatically launch the native NAVADMIN Viewer iOS and Android apps if installed. The page will be redirected to the `/` path before displaying the message on Desktop and if no app installs are detected.*
 
-Parameter | Allowed Values | Description
---- | --- | --- 
-`type` | `NAVADMIN`, `ALNAV`, `MARADMIN`, `ALMAR` | The shared message type.
-`year` | 20xx | The shared message year.
-`number` | xxx | The shared message number.
+Parameter | Allowed Values | Description |
+--- | --- | --- |
+`type` | `NAVADMIN`, `ALNAV`, `MARADMIN`, `ALMAR` | The message type. |
+`year` | 20xx | The message year. |
+`number` | xxx | The message number. |
 
 ### ❔ FAQ
 
-- Is this an official government product?
- 
-  No. NAVADMIN Viewer comes with no warranty or claim of accuracy. The user is responsible for verifying information with official sources. 
-
-- Is there a native app for this?
-
-  Yes. For [iOS](https://apps.apple.com/us/app/navadmin-viewer/id1345135985) and [Android](https://play.google.com/store/apps/details?id=com.ansonliu.navadmin). 
-
-- Why not support *XXX* feature and device?
-
-  I may not have that device. I currently work on this in my own time for free. You may contact me for consulting by [emailing me](mailto:support@ansonliu.com).
-
-- Can I use your data feed in my own work?
-
-  Please let me know before you do. Data transfer costs me money. Don't ruin it for everyone.
+See the main [FAQ](https://github.com/navadmin-viewer/?view_as=public)
 
 ### 🎉 Credits
 

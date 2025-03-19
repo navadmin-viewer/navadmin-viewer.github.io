@@ -1,3 +1,6 @@
 user-agent: *
+allow: /*?type=*
+allow: /*?type=*&year=*
+allow: /*?type=*&year=*&number=*
 disallow: /privacy.html
 sitemap: https://navadmin-server.runs.io/sitemap

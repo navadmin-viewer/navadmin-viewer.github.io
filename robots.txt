@@ -3,5 +3,8 @@ allow: /
 allow: /*?type=*
 allow: /*?type=*&year=*
 allow: /*?type=*&year=*&number=*
+allow: /*?type=*
+allow: /*?type=*&amp;year=*
+allow: /*?type=*&amp;year=*&amp;number=*
 disallow: /privacy.html
 sitemap: https://navadmin-server.runs.io/sitemap

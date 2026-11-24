@@ -397,6 +397,7 @@
       assert(fields.length === 1 && body.children().length === 1, 'Expected one field for the message body');
       assert(fields.val() === linkedBody, 'Literal markup, line breaks, or reference text changed');
       var field = fields[0];
+      assert(field.textContent === linkedBody, 'The message text should be present in the rendered HTML');
       assert(field.readOnly && !field.disabled, 'The message field should be selectable and read-only');
       assert(fields.attr('aria-label') === 'Message text' && field.tabIndex === 0, 'The message field should be named and in the tab order');
       focus(field);

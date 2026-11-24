@@ -1066,7 +1066,8 @@ function showMessage(type, year, number, depth, row, opener) {
       'readonly': true,
       'rows': 12,
       'wrap': 'soft'
-    }).val(body);
+    });
+    messageText[0].defaultValue = body;
     msgModalBody.empty().append(messageText);
 
     if (typeof analytics !== 'undefined') {

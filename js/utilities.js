@@ -1,19 +1,13 @@
-/*
- * https://www.tinabellvance.com/posts/getting-url-parameters-in-ie11-using-jquery-vanilla-javascript-and-es6/
- */
-function getUrlParameter(location, name) {
-  name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
-  var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
-  var results = regex.exec(location);
-  return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
-};
-
 //left pad
 function pad(num, size) {
   return ('000' + num).slice(-size);
 }
 
-//https://stackoverflow.com/a/21742107/761902
+/**
+ * Identify the mobile platform so the app link can open the appropriate store.
+ * @returns {string} The platform name android, ios, or unknown.
+ * @see https://stackoverflow.com/a/21742107/761902
+ */
 function getMobileOperatingSystem() {
   var userAgent = navigator.userAgent || navigator.vendor || window.opera;
   if (/android/i.test(userAgent))
@@ -32,6 +26,11 @@ function uuidv4() {
   });
 }
 
+/**
+ * Read a cookie visible to the current page.
+ * @param {string} cname The cookie name.
+ * @returns {string} The cookie value, or an empty string if the cookie is missing.
+ */
 function getCookie(cname) {
   var name = cname + "=";
   var decodedCookie = decodeURIComponent(document.cookie);
@@ -48,6 +47,12 @@ function getCookie(cname) {
   return "";
 }
 
+/**
+ * Write a cookie with a site-wide path.
+ * @param {string} cname The cookie name.
+ * @param {string|number} cvalue The value to store.
+ * @param {number} [exdays] The lifetime in days when setting an expiration.
+ */
 function setCookie(cname, cvalue, exdays) {
   var d = new Date();
   d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
@@ -55,62 +60,59 @@ function setCookie(cname, cvalue, exdays) {
   document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
 }
 
+/**
+ * Probe browser storage with a write and removal.
+ * @returns {boolean} Whether browser storage is writable.
+ */
 function isLocalStorageSupported() {
-  var mod = 'nv'
+  var probeKey = 'nv';
   try {
-    localStorage.setItem(mod, mod);
-    localStorage.removeItem(mod);
+    localStorage.setItem(probeKey, probeKey);
+    localStorage.removeItem(probeKey);
     return true;
-  } catch(e) {
-      return false;
-  }
-}
-
-function saveKeyValueToLocalStorage(k, v) {
-  try {
-    localStorage.setItem(k, btoa(v));
-    return true;
-  } catch (e) {
-    console.log('Unable to store data:', e);
+  } catch (error) {
+    console.log('Browser storage is unavailable.', error.name);
     return false;
   }
 }
 
-function getKeyValueFromLocalStorage(k) {
+/**
+ * Encode a value as Base64 and save it in browser storage.
+ * @param {string} key The storage key.
+ * @param {string} value A value that the browser can Base64-encode.
+ * @returns {boolean} Whether the value was encoded and saved.
+ */
+function saveKeyValueToLocalStorage(key, value) {
   try {
-    return atob(localStorage.getItem(k));
-  } catch (e) {
-    console.log('Unable to get data:', e);
+    localStorage.setItem(key, btoa(value));
+    return true;
+  } catch (error) {
+    console.log('Unable to encode or save the value in browser storage.', error.name);
     return false;
   }
 }
 
-function saveCachedMessagesToLocalStorage() {
-  if (cachedMessages) {
-    try {
-      localStorage.setItem(cachedMessagesLocalStorageKey, serializeMap(cachedMessages))
-      return true;
-    } catch (e) {
-      console.log('Unable to store messages:', e);
-      return false;
-    }
+/**
+ * Read a Base64-encoded value from browser storage.
+ * @param {string} key The storage key.
+ * @returns {string|boolean} The decoded value, or false if reading or decoding fails.
+ */
+function getKeyValueFromLocalStorage(key) {
+  try {
+    return atob(localStorage.getItem(key));
+  } catch (error) {
+    console.log('Unable to read or decode the value from browser storage.', error.name);
+    return false;
   }
-  return false;
 }
 
-function latestYearForMsgType(msgType) {
-  if (!cachedMessages || !cachedMessages.get(msgType)) {
-    return -1;
-  }
-
-  var ly = -1;
-  cachedMessages.get(msgType).forEach(function(v, k) {
-    if (ly == -1)
-      ly = k;
-  });
-  return ly;
-}
-
+/**
+ * Format the label for a message, year, or message type.
+ * @param {MsgType|number} msgType The message type, or -1 to omit the type.
+ * @param {number} [msgYear] The message year.
+ * @param {number} [msgNumber] The message number when formatting an individual message.
+ * @returns {string} The display label.
+ */
 function shortNameForMessage(msgType, msgYear, msgNumber) {
   var shortName = '';
   if (msgType > -1) {
@@ -120,81 +122,76 @@ function shortNameForMessage(msgType, msgYear, msgNumber) {
     shortName += pad(msgNumber, 3) + '/';
   }
   if (msgYear > 0) {
-    if (msgNumber > 0) {
-      shortName += (msgYear % 1000).toString();
-    } else {
-      shortName += msgYear.toString();
-    }
-    
+    shortName += (msgNumber > 0 ? msgYear % 1000 : msgYear).toString();
   }
-  return shortName
+  return shortName;
 }
 
-function linkDocumentAndMessageReferences(body, excludeText) {
-  function matchAll(str, re) {
-    re = new RegExp(re, 'g');
+/**
+ * Build the message body from text nodes and clickable references.
+ * @param {string} body The plain-text message body.
+ * @param {string} [excludeText] An exact reference to leave as plain text.
+ * @param {function} [onOpenMessage] Opens a referenced type, year, and message number in the viewer.
+ * @returns {DocumentFragment} The text and reference links ready for the modal.
+ */
+function linkDocumentAndMessageReferences(body, excludeText, onOpenMessage) {
+  var matches = [];
+
+  function collectMatches(pattern, createLink) {
+    var expression = new RegExp(pattern.source, 'g');
     var match;
-    var matches = [];
-    
-    while (match = re.exec(str)) 
-      matches.push(match);
-      
-    return matches;
+    while ((match = expression.exec(body)) !== null) {
+      if (match[0] !== excludeText) {
+        matches.push({ match: match, createLink: createLink });
+      }
+    }
   }
 
-  function createDocumentSearchLink(m) {
-    var link = $("<a>", { 'href': 'https://www.google.com/search?q=' + m[0] + ' site:gov OR site:mil OR site:us OR site:ansonliu.com OR navadmin-viewer.github.io' });
-    link.text(m[0])
-    return link
+  function createDocumentSearchLink(match) {
+    var link = document.createElement('a');
+    var query = match[0] + ' site:gov OR site:mil OR site:us OR site:ansonliu.com OR navadmin-viewer.github.io';
+    link.href = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+    return link;
   }
 
-  function createMessageLoadLink(m) {
-    var msgYear = 2000+parseInt(m[3])
-    var link = $("<a>", { 'href': false ? '#' : createMessageDirectLink(stringToMsgType(m[1]), msgYear, parseInt(m[2]), false) });
-    link.text(m[0])
-    var prepareAndShowMessageModalFunctionCall = 'prepareAndShowMessageModal(' + stringToMsgType(m[1]) + ',' + msgYear + ',' + parseInt(m[2]) + ',null);';
-    link.attr('onclick', 'event.preventDefault();' + prepareAndShowMessageModalFunctionCall + 'return false;')
-    return link
+  function createMessageLoadLink(match) {
+    var msgType = stringToMsgType(match[1]);
+    var msgYear = 2000 + parseInt(match[3], 10);
+    var msgNumber = parseInt(match[2], 10);
+    var link = document.createElement('a');
+    link.href = Navadmin.navigation.shareLink(msgType, msgYear, msgNumber, false);
+    link.addEventListener('click', function(event) {
+      if (!onOpenMessage || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0)
+        return;
+
+      event.preventDefault();
+      onOpenMessage(msgType, msgYear, msgNumber);
+    });
+    return link;
   }
 
-  var matches = []
-  //for (m of body.matchAll(reDocument)) {
-  var docMatches = matchAll(body, reDocument)
-  for (var i = 0; i < docMatches.length; i++) {
-    m = docMatches[i]
-    m.replacementElement = createDocumentSearchLink(m)
-    matches.push(m)
-  }
-
-  //for (m of body.matchAll(reMessage)) {
-  var msgMatches = matchAll(body, reMessage)
-  for (var i = 0; i < msgMatches.length; i++) {
-    m = msgMatches[i]
-    if (m[0] == excludeText)
-      continue
-
-    m.replacementElement = createMessageLoadLink(m)
-    matches.push(m)
-  }
-
-  // Sort matches by index in desc order
+  collectMatches(reDocument, createDocumentSearchLink);
+  collectMatches(reMessage, createMessageLoadLink);
   matches.sort(function(a, b) {
-    return b.index - a.index;
+    return a.match.index - b.match.index;
   });
 
-  function replaceSubstring(originalString, startIndex, endIndex, replacement) {
-    return originalString.substring(0, startIndex) + replacement + originalString.substring(endIndex);
-  }
-
-  //console.log(matches)
-
+  var fragment = document.createDocumentFragment();
+  var offset = 0;
   for (var i = 0; i < matches.length; i++) {
-    var m = matches[i]
-    //console.log(m)
-    //console.log(m.replacementElement.prop('outerHTML'))
-    body = replaceSubstring(body, m.index, m.index+m[0].length, m.replacementElement.prop('outerHTML'))
-    //console.log(body)
-  }
+    var item = matches[i];
+    var match = item.match;
+    if (match.index < offset)
+      continue;
 
-  return body
+    if (match.index > offset) {
+      fragment.appendChild(document.createTextNode(body.slice(offset, match.index)));
+    }
+    var link = item.createLink(match);
+    link.appendChild(document.createTextNode(match[0]));
+    fragment.appendChild(link);
+    offset = match.index + match[0].length;
+  }
+  fragment.appendChild(document.createTextNode(body.slice(offset)));
+  return fragment;
 }

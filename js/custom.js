@@ -5,665 +5,517 @@ var availableMsgTypes = [
   MsgType.ALMAR
 ];
 
-var cachedMessagesLocalStorageKey = 'nv-cachedMessages'
-var cachedBroadcastLocalStorageKey = 'nv-cachedBroadcast'
-
-var urlParamMsgType = MsgType.UNKNOWN;
-var urlParamMsgYear = -1;
-var urlParamMsgNumber = -1;
-
-// msg-type -> {msg-year:[]msg} 
-var cachedMessages;
-// postData -> 1 | not set
-var activeMetadataRequests = new Map();
-
-var userSelectedMsgType = MsgType.NAVADMIN;
-var userSelectedMsgYear = -1;
-var userSelectedMsgNumber = -1;
-
-var navAppLink;
+// Callbacks compare their selection object with the current one before changing the UI.
+var listSelection;
+// Keep the values actually rendered alongside each row. Null represents an unavailable list.
+// Leave this undefined until the first render so the HTML placeholder gets cleared.
+var displayedRows;
+var selectedMessage;
 
 var loadingProgress;
-var loadingProgressHideShowDuration = 100;
-
 var msgModal;
 var msgModalTitle;
 var msgModalBody;
-var msgModalShare;
-var msgModalHistoryDepth = 0;
-
-function validateAndUseURLParams(url) {
-  urlParamMsgType = stringToMsgType(getUrlParameter(url, 'type'));
-  urlParamMsgYear = parseInt(getUrlParameter(url, 'year'));
-  urlParamMsgNumber = parseInt(getUrlParameter(url, 'number'));
-
-  //Use url parameter msg type as the default selected msg type in the UI filter. 
-  if (urlParamMsgType != MsgType.UNKNOWN) {
-    userSelectedMsgType = urlParamMsgType;
-    //Only prefill url param msg year if the url param msg type is valid.
-    if (urlParamMsgYear > -1) {
-      userSelectedMsgYear = urlParamMsgYear;
-
-      if (urlParamMsgNumber > -1) {
-        userSelectedMsgNumber = urlParamMsgNumber;
-      } else {
-        userSelectedMsgNumber = -1
-      }
-    } else {
-      userSelectedMsgYear = -1
-    }
-  } else {
-    userSelectedMsgType = MsgType.NAVADMIN
-  } 
-}
+var pageDescription;
+var listDescription;
 
 $(document).ready(function() {
-  //Set callback for setting wait cursor
-  $(document).ajaxStart(function () { $("html").addClass("wait"); });
-  $(document).ajaxStop(function () { $("html").removeClass("wait"); });
-
-  navAppLink = $('#nav-app-link');
+  $(document).ajaxStart(function() { $('html').addClass('wait'); });
+  $(document).ajaxStop(function() { $('html').removeClass('wait'); });
 
   loadingProgress = $('#loading-progress');
-
   msgModal = $('#msg-body-modal');
-  msgModalTitle = $('#msg-body-modal .modal-title');
-  msgModalBody = $('#msg-body-modal .modal-body');
-  msgModalShare = $('#msg-body-modal .modal-share-link');
+  msgModalTitle = msgModal.find('.modal-title');
+  msgModalBody = msgModal.find('.modal-body');
+  pageDescription = document.querySelector('meta[name="description"]');
+  listDescription = pageDescription ? pageDescription.getAttribute('content') : '';
 
-  validateAndUseURLParams(window.location.href)
-  
-  //Load previously stored messages from local storage
-  if (isLocalStorageSupported()) {
-    cachedMessages = deserializeMapString(localStorage.getItem(cachedMessagesLocalStorageKey))
-  }
+  Navadmin.messageStore.load();
 
-  // Increment visits in cookie
-  var visits = getCookie(COOKIE_VISITS);
-  if (visits.length == 0) {
-    visits = 1;
-  } else {
-    visits += 1;
-  }
-  setCookie(COOKIE_VISITS, visits);
+  var visits = parseInt(getCookie(COOKIE_VISITS), 10) || 0;
+  setCookie(COOKIE_VISITS, visits + 1);
 
-  try {
-    //Attach visibilitychange handler for triggering storage of messages to local storage
-    document.addEventListener("visibilitychange", function() {
-      if (document.visibilityState === 'hidden') {
-        console.log('save')
-        saveCachedMessagesToLocalStorage()
-      }
-    });
-  } catch (e) {
-    console.log('Could not add event listener for visibilitychange', e);
-  }
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') {
+      console.log('Page hidden. Saving the message cache.');
+      Navadmin.messageStore.save();
+    }
+  });
 
-  setUIInLoadingStatus(true, "Getting available messages");
-  setFilterMsgTypeDropdown(availableMsgTypes);
-  setFilterMsgYearDropdown(userSelectedMsgType, userSelectedMsgYear);
-  setTableMessages(userSelectedMsgType, userSelectedMsgYear);
+  setFilterMsgTypeDropdown();
+  $('#msg-search-input').on('input keyup change', msgFilterSearchInputChanged);
+  $('#msg-search-input').on('paste cut', function() {
+    window.setTimeout(msgFilterSearchInputChanged, 0);
+  });
+  $('#nav-app-link').click(navigateToAppStore);
+  msgModal.find('.modal-share-link').click(shareUserSelectedMessageLink);
+  msgModal.on('hide.bs.modal', closeMessage);
+  // Bootstrap ignores show/hide requests while a modal is transitioning.
+  msgModal.on('shown.bs.modal', function() {
+    if (!selectedMessage) {
+      msgModal.modal('hide');
+    }
+  });
+  msgModal.on('hidden.bs.modal', function() {
+    if (selectedMessage) {
+      msgModal.modal('show');
+    }
+  });
 
-  //Use url params to start loading a message to view if the url params are valid. 
-  if (userSelectedMsgType != MsgType.UNKNOWN && userSelectedMsgYear > -1 && userSelectedMsgNumber > -1) {
-    getMessageYearsAndMetadata(
-      null,
-      function() {
-        prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null, false)
-      })
-    
-
-    //Log launch with parameter
+  var route = Navadmin.navigation.readRoute(window.location.href);
+  if (route.number > 0) {
+    Navadmin.navigation.seedMessageHistory(route);
     if (typeof analytics !== 'undefined') {
       analytics.logEvent('LaunchParameter', {
-        messageNumber: msgTypeToString(userSelectedMsgType) + ' ' + pad(m.number, 3) + '/' + pad((m.year % 1000), 2)
+        messageNumber: shortNameForMessage(route.type, route.year, route.number)
       });
     }
-  } else {
-    //No completely prefilled message selector found in url parameters.
-    getMessageYearsAndMetadata(
-      function() {
-        //debugger
-        setFilterMsgTypeDropdown(availableMsgTypes);
-        setFilterMsgYearDropdown(userSelectedMsgType, userSelectedMsgYear);
-        
-      }, 
-      function() {
-        //debugger
-        setTableMessages(userSelectedMsgType, userSelectedMsgYear);
-      }
-    );
   }
 
-  $("#msg-search-input").on('keyup paste', msgFilterSearchInputChanged);
-
-  navAppLink.click(navigateToAppStore)
-
-  msgModalShare.click(shareUserSelectedMessageLink);
-
-  //Hide modal on backspace
-  // $(document).on('keydown', function(event) {
-  //   if (event.keyCode === 8) {
-  //     if (msgModal) {
-  //       msgModal.modal('hide')
-  //     }
-  //     event.preventDefault(); // Prevent default backspace action if needed
-  //   }
-  // });
-
-  // Check for broadcast
-  getBroadcast(null)
+  restoreHistoryRoute();
+  Navadmin.navigation.onPopState(restoreHistoryRoute);
+  getBroadcast(null);
 });
 
-function getMessageYearsAndMetadata(yearsCompletionHandler, metadataCompletionHandler) {
-  getYearsForMsgType( // Get years for message type
-    userSelectedMsgType, 
-    [], 
-    false, 
-    function() {
-      if (!setFilterMsgYearDropdown(userSelectedMsgType, userSelectedMsgYear)) { console.log("getMessageYearsAndMetadata > fetch > completionHandler > setFilterMsgYearDropdown did not have data to complete.") }
-      
-      getYearsForMsgType( //Get message metadata for the user selected year or latest year
-        userSelectedMsgType, 
-        [userSelectedMsgYear > -1 ? userSelectedMsgYear : latestYearForMsgType(userSelectedMsgType)], 
-        false, 
-        function() {
-          //debugger
-          if (!setTableMessages(userSelectedMsgType, userSelectedMsgYear)) { console.log("getMessageYearsAndMetadata > fetch > completionHandler > fetch > completionHandler > setTableMessages did not have data to complete.")}
-          if (metadataCompletionHandler)
-            metadataCompletionHandler()
-        }
-      )
-
-      if (yearsCompletionHandler)
-        yearsCompletionHandler()
-    }
-  );
+/**
+ * Set the loading indicator to a loading, error, or hidden state.
+ * @param {boolean} loading Whether the list is loading.
+ * @param {string|null} [statusText] Text to display. When loading is false,
+ *   a message is shown as an error and an empty value hides the indicator.
+ */
+function setUIInLoadingStatus(loading, statusText) {
+  var bar = loadingProgress.find('.progress-bar');
+  bar.toggleClass('bg-danger', !loading && !!statusText);
+  bar.text(statusText || '');
+  loadingProgress.toggle(loading || !!statusText);
 }
 
 /**
- * Set UI loading status
- * @param {boolean} disable Show UI as loading. 
- * @param {string} statusText Status text.
+ * Add a filter link that opens the chosen list in the viewer.
+ * @param {jQuery} menu The dropdown menu to append to.
+ * @param {string|number} label The displayed menu item text.
+ * @param {string} link The URL used for regular browser link actions.
+ * @param {MsgType} type The message type to select.
+ * @param {number} year The message year, or -1 for the latest available year.
  */
-function setUIInLoadingStatus(disable, statusText) {
-  //console.trace()
-  console.log(disable, statusText)
-  if (disable) {
-    loadingProgress.removeClass('bg-warning');
-    loadingProgress.show(loadingProgressHideShowDuration);
-    loadingProgress.find('div').text(statusText);
-  } else {
-    if (statusText && statusText.length > 0) {
-      loadingProgress.find('div').addClass('bg-danger');
-      console.log('run')
-    } else {
-      loadingProgress.find('div').removeClass('bg-warning');
-      loadingProgress.hide(loadingProgressHideShowDuration);
+function addListFilterItem(menu, label, link, type, year) {
+  var item = $('<a>', { 'class': 'dropdown-item', 'href': link }).text(label);
+  item.click(function(e) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
+      return;
     }
-    loadingProgress.find('div').text(statusText);
-  }
+    e.preventDefault();
+    if (listSelection.type == type && listSelection.year == year) {
+      console.log('The selected filter is already active. Refreshing the list.');
+      loadMessageList(type, year);
+      return;
+    }
+    Navadmin.navigation.pushList(type, year);
+    restoreHistoryRoute();
+  });
+  menu.append(item);
 }
 
 /**
- * Set the message type filter dropdown menu contents.
- * @param {MsgType[]} msgTypes Array of message types to set in the message type filter dropdown menu. 
+ * Populate the message type filter dropdown with the available message types.
  */
-function setFilterMsgTypeDropdown(msgTypes) {
-  console.log('setFilterMsgTypeDropdown' + String(msgTypes));
-
-  //Create click handler for filter msg type
-  function createHandler(msgType) {
-    return function filterMsgTypeClickHandler(e) {
-      e.preventDefault(); // cancel the link behaviour
-      userSelectedMsgType = msgType;
-      userSelectedMsgYear = -1;
-      $("#msg-type-dropdown").text(msgTypeToString(msgType));
-      $("#msg-search-input").val('');
-
-      // Call this if we need to get message metadata
-      function getMessageMetadata() {
-        console.log('Calling getYearsForMsgType from ' + arguments.callee.name);
-        var ly = latestYearForMsgType(msgType)
-        if (ly == -1) {
-          console.log('No latest year for ' + msgTypeToString(msgType));
-          return;
-        }
-        getYearsForMsgType(
-          msgType, 
-          [ly], 
-          false, 
-          function () {
-            if (userSelectedMsgType == msgType && userSelectedMsgYear == ly) {
-              console.log('Calling setTableMessages from setFilterMsgTypeDropdown > clickHandler > fetch > completionHandler > fetch > completionHandler');
-              setTableMessages(msgType, userSelectedMsgYear);
-            }
-          }
-        );
-      }
-
-      console.log('Calling setFilterMsgYearDropdown from ' + arguments.callee.name);
-      var cachedYearDataExists = setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
-      if (!cachedYearDataExists) {
-        getYearsForMsgType(
-          msgType, 
-          [], 
-          false, 
-          function() {
-            getMessageMetadata();
-            console.log('Calling setFilterMsgYearDropdown from setFilterMsgTypeDropdown > clickHandler > fetch > completionHandler');
-            setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
-          }
-        )
-        setUIInLoadingStatus(true, null);
-        return;
-      }
-      
-
-      console.log('Calling setTableMessages from ' + arguments.callee.name);
-      var cachedMessageDataExists = setTableMessages(msgType, userSelectedMsgYear);
-      if (!cachedMessageDataExists) {
-        getMessageMetadata();
-        setUIInLoadingStatus(true, null);
-        return;
-      }
-
-      var cachedYearCount = cachedMessages.get(msgType).size;
-
-      // Get updated years in background. Only update years dropdown if user has still selected this message type.
-      getYearsForMsgType(
-        msgType, 
-        [], 
-        false, 
-        function() {
-          if (userSelectedMsgType == msgType && cachedYearCount != cachedMessages.get(msgType).size) {
-            console.log('Calling setFilterMsgYearDropdown from setFilterMsgTypeDropdown > clickHandler > fetch > completionHandler');
-            setFilterMsgYearDropdown(msgType, userSelectedMsgYear);
-          }
-
-          if (!cachedMessageDataExists) {
-            getMessageMetadata()
-          }
-        }
-      );
-    };
-  }
-
-  $('#msg-type-dropdown-menu').empty();
-
-  for (var i = 0; i < msgTypes.length; i++) {
-    var a = $('<a>', { 'class' : 'dropdown-item', 'href' : createMsgTypeDirectLink(msgTypes[i])});
-    a.text(msgTypeToString(msgTypes[i]));
-    a.click(createHandler(msgTypes[i]));
-    $('#msg-type-dropdown-menu').append(a);
-  }
-
-  $("#msg-type-dropdown").text(msgTypeToString(userSelectedMsgType));
-}
-
-/**
- * Set the msg year filter dropdown elements and dropdown button title.
- * This should be followed by setTableMessages() if the message metadata for that year exists.
- * @param {MsgType} msgType The message type to add dropdown menu year elements for. 
- * @param {number} msgYear The message year to set as the dropdown button title. Pass -1 to set title to latest message year.
- * @returns {bool} Return if message year data was available.
- */
-function setFilterMsgYearDropdown(msgType, msgYear) {
-  console.log('setFilterMsgYearDropdown' + msgTypeToString(msgType) + ' ' + msgYear);
-
-  //Create click handler for filter msg year
-  function createHandler(msgType, msgYear) {
-    return function filterMsgYearClickHandler(e) {
-      e.preventDefault(); // cancel the link behaviour
-      userSelectedMsgType = msgType;
-      userSelectedMsgYear = msgYear;
-      $("#msg-year-dropdown").text(msgYear);
-      $("#msg-type-dropdown").text(msgTypeToString(msgType));
-      $("#msg-search-input").val('');
-
-      console.log('Calling setTableMessages from ' + arguments.callee.name);
-      if (!setTableMessages(msgType, msgYear)) {
-        getYearsForMsgType(
-          msgType, 
-          [msgYear], 
-          false, 
-          function filterMsgYearClickHandlerFetchCompletionHandler() {
-            console.log('Calling setTableMessages from ' + arguments.callee.name);
-            setTableMessages(msgType, msgYear);
-          }
-        );
-        setUIInLoadingStatus(true, null);
-        return;
-      }
-
-      // Get updated message metadata in background. Only update messages table if user has still selected this message type and year and number of messages has changed.
-      var cachedYearMessageCount = cachedMessages.get(msgType).get(msgYear).length;
-      getYearsForMsgType(
-        msgType, 
-        [msgYear], 
-        false, 
-        function filterMsgYearClickHandlerFetchCompletionHandler() {
-          if (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && cachedYearMessageCount != cachedMessages.get(msgType).get(msgYear).length) {
-            console.log('Calling setTableMessages from ' + arguments.callee.name);
-            setTableMessages(msgType, msgYear);
-          }
-        });
-    };
-  }
-
-  $('#msg-year-dropdown-menu').empty();
-
-  if (cachedMessages && cachedMessages.get(msgType)) {
-    cachedMessages.get(msgType).forEach(function(v, k) {
-      var a = $('<a>', { 'class': 'dropdown-item', 'href': createYearDirectLink(msgType, k) });
-      a.text(k);
-      a.click(createHandler(msgType, k));
-      $('#msg-year-dropdown-menu').append(a);
-
-      //Save latest msgYear to set it as the dropdown button title later
-      if (msgYear == -1)
-        msgYear = k;
-    });
-  } else {
-    // getYearsForMsgType(msgType, [], true, null);
-    // setUIInLoadingStatus(true, null);
-    return false;
-  }
-
-  userSelectedMsgYear = msgYear;
-  $("#msg-year-dropdown").text(msgYear);
-  return true;
-}
-
-/**
- * Set the message table contents.
- * @param {MsgType} msgType The message type to show. 
- * @param {number} msgYear The message year to show. Pass -1 to set title to latest message year.
- * @returns {bool} Return if message table data was available.
- */
-function setTableMessages(msgType, msgYear) {
-  console.log('setTableMessages' + msgTypeToString(msgType) + ' ' + msgYear);
-
-  document.title = shortNameForMessage(msgType, msgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
-  window.history.pushState(document.title, NAVADMIN_VIEWER_TITLE, createURLParameters(msgType, msgYear));
-
-  //If msgYear is -1, set the msgYear to the latest year for the message type.
-  if (msgYear == -1) {
-    msgYear = latestYearForMsgType(msgType);
-    if (msgYear == -1) {
-      console.log('setTableMessages found no cached messsage data to use for -1 msgYear')
-      return false;
-    }
-  }
-
-  msg = null;
-  if (cachedMessages && cachedMessages.get(msgType)) {
-    msg = cachedMessages.get(msgType).get(msgYear);
-  }
-  
-  $('#msg-list-table-body').empty();
-
-  if (!msg) {
-    console.log('No msg array found for ' + msgTypeToString(msgType) + ' ' + msgYear + '. Should create new network request.');
-    // getYearsForMsgType(msgType, [msgYear], false, null);
-    // setUIInLoadingStatus(true, null);
-    return false;
-  } else {
-    console.log('Cached msg array found for ' + msgTypeToString(msgType) + ' ' + msgYear + '.');
-    // getYearsForMsgType(msgType, [msgYear], false, null);
-    // setUIInLoadingStatus(false, null);
-  }
-
-  for (var i = msg.length - 1; i >= 0; i--) {
-    m = msg[i];
-    var tr = $("<tr>", {});
-    var th = $("<th>", {});
-    var td = $("<td>", {});
-    var tdStats = $("<td>", {});
-    var msgNumAbbr = shortNameForMessage(-1, m.year, m.number)
-    th.text(msgNumAbbr);
-    th.attr('id', msgNumAbbr);
-    if (m.Body && m.Body.length > 0) {
-      th.addClass('offline-enabled')
-    }
-
-    var messageTitle = m.title;
-    if (m.title.length == 0) {
-      messageTitle = 'No subject found';
-    } 
-    if (m.cancelled) {
-      messageTitle = m.title.length > 0 ? m.title : 'N/A';
-      tr.addClass('table-danger');
-      tr.css('cursor', 'not-allowed');
-    }
-
-    var subjectLink = $("<a>", { 'href': createMessageDirectLink(m.type, m.year, m.number, false) });
-    subjectLink.text(messageTitle);
-    td.append(subjectLink);
-
-    //Setup stats box
-    var actStarCount = -1;
-    var actViewCount = -1;
-    if (m.actSum && m.actSum.length > 0) {
-      m.actSum.forEach(function(v) {
-        if (v.actType == 'star')
-          actStarCount = v.actNumber;
-        else if (v.actType == 'view')
-          actViewCount = v.actNumber;
-      });
-    }
-    if (actStarCount > -1 || actViewCount > -1) {
-      var divStats = $("<div>", { 'class': 'stats-box' });
-      var pStars = $("<p>", {});
-      var pViews = $("<p>", {});
-      pStars.text('\u2605\u00a0' + (actStarCount > -1 ? actStarCount : 0));
-      pViews.text('\u00a0' + (actViewCount > -1 ? actViewCount : 0));
-      pViews.prepend($("<img>", { 'src': 'assets/eye.svg' }));
-      divStats.append(pStars, pViews);
-      tdStats.append(divStats);
-    }
-
-    tr.append(th, td, tdStats);
-    tr.css('cursor', 'pointer');
-    tr.attr('msg-type', msgTypeToString(m.type));
-
-    //Create click handler for table row
-    function createHandler(msgType, msgYear, msgNumber, row) {
-      return function(e) {
-        e.preventDefault(); // cancel the link behaviour
-        prepareAndShowMessageModal(msgType, msgYear, msgNumber, row, false)
-      };
-    }
-    tr.click(createHandler(m.type, m.year, m.number, tr));
-
-    $('#msg-list-table-body').append(tr);
-
-    //Store reference to tr element in message object inside global message cache
-    m.tr = tr;
-  };
-
-  setUIInLoadingStatus(false, null);
-  return true;
-}
-
-/**
- * Prepare data for and show Message Modal. This is a standalone function so that it can be called from anywhere.
- * @param {MsgType} msgType The message type to show. 
- * @param {number} msgYear The message year to show.
- * @param {number} msgNumber The message number to show.
- * @param {Element} row The message row to effect
- */
-function prepareAndShowMessageModal(msgType, msgYear, msgNumber, row, fromPopState) {
-  if (row)
-    row.css('cursor', 'progress');
-  userSelectedMsgType = msgType;
-  userSelectedMsgYear = msgYear;
-  userSelectedMsgNumber = msgNumber;
-
-  //Check if current message exists in cache
-  var cachedMsg = (cachedMessages && cachedMessages.get(msgType) && cachedMessages.get(msgType).get(msgYear)) ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
-  
-  function fetchAndShowMessage() {
-    getMsgBody(msgType, msgYear, msgNumber, function() {
-      if (row)
-        row.css('cursor', 'pointer');
-      $('#'+shortNameForMessage(-1, msgYear, msgNumber).replace('/','\\/')).addClass('offline-enabled')
-      if (
-        (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||
-        (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)
-      ) {
-        var cachedMsg = (cachedMessages && cachedMessages.get(msgType) && cachedMessages.get(msgType).get(msgYear)) ? cachedMessages.get(msgType).get(msgYear)[msgNumber - 1] : null;
-        setUIInLoadingStatus(false, null)
-        showMessageModal(
-          msgType,
-          msgYear,
-          msgNumber,
-          (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : 'No message data'),
-          (cachedMsg ? cachedMsg.Body : 'Error getting message data'),
-          fromPopState
-        );
-      }
-    } );
-  }
-
-  if (!cachedMessages || !cachedMessages.get(msgType) || !cachedMessages.get(msgType).get(msgYear)) { // We don't have the cache structure for the msg type or msg year
-    getYearsForMsgType(msgType, [msgYear], true, function() {fetchAndShowMessage()})
-  } else if (cachedMsg && cachedMsg.Body && cachedMsg.Body.length > 0) { // We have the full message already
-    showMessageModal(msgType, msgYear, msgNumber, cachedMsg.title, cachedMsg.Body, fromPopState);
-  } else { //We have the cache structure ready but not the message
-    fetchAndShowMessage();
-  }
-}
-
-/**
- * Show Message Modal.
- * @param {MsgType} msgType The message type to show. 
- * @param {number} msgYear The message year to show.
- * @param {number} msgNumber The message number to show.
- * @param {string} title The modal title
- * @param {string} body The modal body text
- */
-function showMessageModal(msgType, msgYear, msgNumber, title, body, fromPopState) {
-  var messageViewText = shortNameForMessage(msgType, msgYear, msgNumber);
-  msgModalTitle.text(messageViewText + (title ? ' - ' + title : '')); //TODO: Do regex search in message body to find SUBJ if not metadata not downloaded from server
-
-  //body = linkDocumentAndMessageReferences(body, messageViewText)
-  //msgModalBody.html(body);
-  try {
-    body = linkDocumentAndMessageReferences(body, messageViewText)
-    msgModalBody.html(body);
-  } catch (e) {
-    console.log('Linking document and message references had error ' + e)
-    msgModalBody.text(body);
-  }
-  
-  
-
-  //Set page title to reflect current contents
-  document.title = msgModalTitle.text() + ' - ' + NAVADMIN_VIEWER_TITLE;
-
-  msgModal.modal('show');
-
-  //increment history state and depth if not triggered from a popstate (moving backwards in pop)
-  if (!fromPopState) {
-    msgModalHistoryDepth += 1;
-    //Set window url to new message direct link parameters
-    window.history.pushState(document.title, title, createURLParameters(msgType, msgYear, msgNumber));
-  }
-
-  if (!msgModal.hideEventSet) {
-    // Avoid double setting modal hide handler
-    msgModal.hideEventSet = true
-
-    msgModal.on('hide.bs.modal', function (e) {
-      console.log('message modal hidden')
-      document.title = shortNameForMessage(userSelectedMsgType, userSelectedMsgYear) + ' - ' + NAVADMIN_VIEWER_TITLE;
-      if (msgModalHistoryDepth != 0) //If we back out with back button to the year view, the popstate handler will hide the modal which will trigger this handler. We don't want to reload the page when depth is 0
-        window.history.go(-msgModalHistoryDepth)
-      msgModalHistoryDepth = 0
-      msgModal.closing = true
-      console.log(window.location.href)
-      
-    })
-  }
-
-  if (typeof analytics !== 'undefined') {
-    //Log Viewed Message event
-    analytics.logEvent('ViewedMessage', {
-      messageNumber: msgTypeToString(urlParamMsgType) + ' ' + pad(m.number, 3) + '/' + pad((m.year % 1000), 2)
-    });
-  }
-
-  document.querySelector('meta[name="description"]').setAttribute("content", title);
-
-  sendViewActivity(msgType, msgYear, msgNumber);
-}
-
-function shareUserSelectedMessageLink(e) {
-  e.preventDefault(); // cancel the link behaviour
-  var shareLink = createMessageDirectLink(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, true);
-  window.prompt("Copy the below share link to clipboard (\u229e Ctrl+C / \uf8ff \u2318+C)", shareLink);
-}
-
-function msgFilterSearchInputChanged(e) {
-  var searchTerm = $(this).val().toUpperCase();
-  var searchRE = new RegExp('.*?' + searchTerm + '.*?\\s?', 'g');
-  var currentSearchArray = cachedMessages.get(userSelectedMsgType).get(userSelectedMsgYear);
-  currentSearchArray.forEach(function(v) {
-    if (!searchRE.test(v.title))
-      v.tr.hide();
-    else
-      v.tr.show();
+function setFilterMsgTypeDropdown() {
+  var menu = $('#msg-type-dropdown-menu').empty();
+  availableMsgTypes.forEach(function(type) {
+    addListFilterItem(menu, msgTypeToString(type), Navadmin.navigation.shareLink(type, -1, -1, false), type, -1);
   });
 }
 
-function navigateToAppStore(e) {
-  e.preventDefault(); // cancel the link behaviour
-  var appLink;
-  var detectedOS = getMobileOperatingSystem();
-  if (detectedOS == 'android') {
-    appLink = 'https://play.google.com/store/apps/details?id=com.ansonliu.navadmin';
-  } else {
-    appLink = 'https://apps.apple.com/us/app/navadmin-viewer/id1345135985';
-  }
-  location.assign(appLink);
+/**
+ * Populate the year filter from the cache and set its button label.
+ * @param {MsgType} type The message type whose cached years to list.
+ * @param {number} year The year to display. Pass -1 to use the latest cached year.
+ * @returns {number} The selected year, or -1 if no year is available.
+ */
+function setFilterMsgYearDropdown(type, year) {
+  var menu = $('#msg-year-dropdown-menu').empty();
+  Navadmin.messageStore.years(type).forEach(function(availableYear) {
+    addListFilterItem(menu, availableYear, Navadmin.navigation.shareLink(type, availableYear, -1, false), type, availableYear);
+  });
+
+  var displayedYear = year > 0 ? year : Navadmin.messageStore.latestYear(type);
+  $('#msg-year-dropdown').text(displayedYear > 0 ? displayedYear : 'N/A');
+  return displayedYear;
 }
 
-$(window).on('popstate',function(event) {
-  console.log('popstate ' + window.location.href)
+/**
+ * Display cached rows for the selection and refresh its years and messages.
+ * @param {MsgType} type The message type to display.
+ * @param {number} year The year to display, or -1 for the latest available year.
+ */
+function loadMessageList(type, year) {
+  var selection = { type: type, year: year, displayedYear: -1 };
+  listSelection = selection;
+  var listName = shortNameForMessage(type, year).trim();
+  console.log('Loading the message list for ' + listName + '.');
+  $('#msg-type-dropdown').text(msgTypeToString(type));
+  $('#msg-search-input').val('');
+  msgFilterSearchInputChanged();
 
-  //Check if modal was closed directly
-  msgModalClosed = false
-  if (msgModal.closing) {
-    msgModal.closing = false
-    msgModalClosed = true
+  var displayedYear = setFilterMsgYearDropdown(type, year);
+  var hasMessageList = refreshMessageTable(type, displayedYear);
+  setUIInLoadingStatus(!hasMessageList, hasMessageList ? null : 'Getting available messages');
+
+  getYearsForMsgType(type, [], false, function onYearsLoaded(yearsResult) {
+    if (listSelection !== selection) {
+      console.log('Ignoring the year list for ' + listName + ' because the selection changed.');
+      return;
+    }
+    var responseYear = setFilterMsgYearDropdown(type, year);
+    if (responseYear != displayedYear) {
+      console.log('The latest available year for ' + listName + ' changed to ' + responseYear + '.');
+      displayedYear = responseYear;
+      hasMessageList = refreshMessageTable(type, displayedYear);
+      setUIInLoadingStatus(!hasMessageList, hasMessageList ? null : 'Getting available messages');
+    }
+
+    var yearName = shortNameForMessage(type, displayedYear).trim();
+    getYearsForMsgType(type, [displayedYear], false, function onMetadataLoaded(metadataResult) {
+      if (listSelection !== selection) {
+        console.log('Ignoring the refreshed list for ' + yearName + ' because the selection changed.');
+        return;
+      }
+      var requestFailed = metadataResult.requestOutcome === 'error' || yearsResult.requestOutcome === 'error';
+      if (refreshMessageTable(type, displayedYear, !requestFailed)) {
+        setUIInLoadingStatus(false);
+      } else {
+        console.log('Could not load the list for ' + yearName + ' and no cached list is available.');
+        setUIInLoadingStatus(false, metadataResult.errorText || yearsResult.errorText);
+      }
+      if (selectedMessage) {
+        setMessageTitle(selectedMessage);
+      }
+    });
+  });
+}
+
+/**
+ * Restore the selected list’s title and the default page description.
+ */
+function setListTitle() {
+  var title = shortNameForMessage(listSelection.type, listSelection.displayedYear);
+  document.title = title.trim() + ' - ' + NAVADMIN_VIEWER_TITLE;
+  if (pageDescription) {
+    pageDescription.setAttribute('content', listDescription);
   }
-  
-  //Decrement depth if modal not closed directly
-  if (!msgModalClosed) {
-    console.log('depth' + msgModalHistoryDepth)
-    msgModalHistoryDepth -= 1
-    console.log('depth' + msgModalHistoryDepth)
+}
+
+/**
+ * Update the table when the row values differ from what it shows.
+ * @param {MsgType} msgType The message type to display.
+ * @param {number} msgYear The resolved year to display.
+ * @param {boolean} [showEmptyIfUnavailable] Show the empty row if the completed
+ *   requests succeeded without providing a message list.
+ * @returns {boolean} Whether the table shows a list or an empty result.
+ */
+function refreshMessageTable(msgType, msgYear, showEmptyIfUnavailable) {
+  listSelection.displayedYear = msgYear;
+  if (!selectedMessage) {
+    setListTitle();
   }
-  console.log('depth' + msgModalHistoryDepth)
 
-  oldUserSelectedMsgType = userSelectedMsgType
-  oldUserSelectedMsgYear = userSelectedMsgYear
-  validateAndUseURLParams(window.location.href)
+  var rows = snapshotMessageRows(msgType, msgYear);
+  if (rows === null && showEmptyIfUnavailable) {
+    rows = [];
+  }
+  var renderedRows = displayedRows;
+  if (displayedRows) {
+    renderedRows = displayedRows.map(function(entry) { return entry.message; });
+  }
 
-  // Check if we need to show another modal
-  if (userSelectedMsgType != MsgType.UNKNOWN && userSelectedMsgYear > -1 && userSelectedMsgNumber > -1) {
-    prepareAndShowMessageModal(userSelectedMsgType, userSelectedMsgYear, userSelectedMsgNumber, null, true)
+  var listName = shortNameForMessage(msgType, msgYear).trim();
+  if (JSON.stringify(rows) === JSON.stringify(renderedRows)) {
+    console.log('The displayed rows for ' + listName + ' already match the cache.');
+    return rows !== null;
+  }
+
+  var table = $('#msg-list-table-body').empty();
+  displayedRows = null;
+  if (rows === null) {
+    console.log('No cached message list is available for ' + listName + '.');
+    return false;
+  }
+
+  if (rows.length === 0) {
+    console.log('Showing the empty message list for ' + listName + '.');
+    table.append('<tr><td></td><td>No messages available</td><td></td></tr>');
+    displayedRows = [];
+    return true;
+  }
+
+  console.log('Rendering the cached message list for ' + listName + ' because its row values changed.');
+  var fragment = document.createDocumentFragment();
+  displayedRows = rows.map(function(message) {
+    var row = createMessageRow(message);
+    fragment.appendChild(row[0]);
+    return { message: message, row: row };
+  });
+  table.append(fragment);
+  msgFilterSearchInputChanged();
+  return true;
+}
+
+/**
+ * Copy the fields used to render and filter the table in display order.
+ * @param {MsgType} msgType The message type to display.
+ * @param {number} msgYear The resolved year to display.
+ * @returns {Object[]|null} The row values, or null when the list is unavailable.
+ */
+function snapshotMessageRows(msgType, msgYear) {
+  var messages = Navadmin.messageStore.messages(msgType, msgYear);
+  if (!messages) {
+    return null;
+  }
+
+  var rows = [];
+  for (var i = messages.length - 1; i >= 0; i--) {
+    var message = messages[i];
+    if (!message) {
+      continue;
+    }
+
+    var row = {
+      type: message.type,
+      year: message.year,
+      number: message.number,
+      title: message.title || '',
+      cancelled: !!message.cancelled,
+      offline: !!message.Body,
+      stars: -1,
+      views: -1
+    };
+    (message.actSum || []).forEach(function(activity) {
+      if (activity.actType == 'star') {
+        row.stars = activity.actNumber;
+      } else if (activity.actType == 'view') {
+        row.views = activity.actNumber;
+      }
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * Build a clickable table row with the subject, offline indicator, and activity counts.
+ * @param {Object} message The message values captured for this row.
+ * @returns {jQuery} The rendered table row.
+ */
+function createMessageRow(message) {
+  var row = $('<tr>').css('cursor', 'pointer').attr('msg-type', msgTypeToString(message.type));
+  var number = $('<th>').text(shortNameForMessage(-1, message.year, message.number));
+  if (message.offline) {
+    number.addClass('offline-enabled');
+  }
+
+  var title = message.title || (message.cancelled ? 'N/A' : 'No subject found');
+  if (message.cancelled) {
+    row.addClass('table-danger');
+  }
+  var subjectLink = $('<a>', {
+    'href': Navadmin.navigation.shareLink(message.type, message.year, message.number, false)
+  }).text(title);
+  var subject = $('<td>').append(subjectLink);
+
+  var counts = $('<td>');
+  if (message.stars > -1 || message.views > -1) {
+    var starCount = $('<p>').text('\u2605\u00a0' + Math.max(message.stars, 0));
+    var viewIcon = $('<img>', { 'src': 'assets/eye.svg', 'alt': 'views' });
+    var viewCount = $('<p>').text('\u00a0' + Math.max(message.views, 0)).prepend(viewIcon);
+    var stats = $('<div>', { 'class': 'stats-box' }).append(starCount, viewCount);
+    counts.append(stats);
+  }
+
+  row.append(number, subject, counts);
+  row.click(function(e) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    e.preventDefault();
+    prepareAndShowMessageModal(message.type, message.year, message.number, row);
+  });
+  return row;
+}
+
+/**
+ * Filter the displayed rows by a case-insensitive literal match on the subject.
+ */
+function msgFilterSearchInputChanged() {
+  if (!displayedRows) {
+    return;
+  }
+  var search = $('#msg-search-input').val().toUpperCase();
+  displayedRows.forEach(function(entry) {
+    var title = (entry.message.title || '').toUpperCase();
+    entry.row.toggle(title.indexOf(search) !== -1);
+  });
+}
+
+/**
+ * Restore the list and modal from the current URL and existing history state.
+ */
+function restoreHistoryRoute() {
+  var entry = Navadmin.navigation.readHistory();
+  var route = entry.route;
+  var list = entry.list;
+  var hasMessage = route.number > 0;
+  var routeName = shortNameForMessage(route.type, route.year, route.number).trim();
+  console.log('Restoring ' + routeName + ' from the current URL.');
+
+  if (!hasMessage) {
+    selectedMessage = null;
+    msgModal.modal('hide');
+  }
+  if (!listSelection || listSelection.type != list.type || listSelection.year != list.year) {
+    loadMessageList(list.type, list.year);
+  }
+  if (hasMessage) {
+    showMessage(route.type, route.year, route.number, entry.depth);
   } else {
-    //Avoid double calling modal hide handler
-    if (!msgModalClosed) {
-      msgModal.modal('hide')
+    setListTitle();
+  }
+}
+
+/**
+ * Open a message from the table or a reference and add its browser history entry.
+ * @param {MsgType} type The message type to open.
+ * @param {number} year The message year.
+ * @param {number} number The message number.
+ * @param {jQuery|null} [row] The table row whose cursor shows download progress.
+ */
+function prepareAndShowMessageModal(type, year, number, row) {
+  if (selectedMessage && selectedMessage.type == type &&
+      selectedMessage.year == year && selectedMessage.number == number) {
+    console.log('The requested message is already selected.');
+    return;
+  }
+  var depth = Navadmin.navigation.pushMessage(type, year, number, listSelection, selectedMessage);
+  showMessage(type, year, number, depth, row);
+}
+
+/**
+ * Show the message modal and fetch its metadata and body as needed.
+ * @param {MsgType} type The message type to display.
+ * @param {number} year The message year.
+ * @param {number} number The message number.
+ * @param {number} depth The number of browser history entries to go back when
+ *   closing the modal. Use 0 when there is no originating list entry.
+ * @param {jQuery|null} [row] The table row whose cursor shows download progress.
+ */
+function showMessage(type, year, number, depth, row) {
+  var message = { type: type, year: year, number: number, depth: depth };
+  selectedMessage = message;
+
+  var messageName = setMessageTitle(message);
+  var spinner = $('<span>', {
+    'class': 'spinner-border spinner-border-sm mr-2',
+    'aria-hidden': 'true'
+  });
+  msgModalBody.empty().append(spinner, document.createTextNode('Retrieving message\u2026'));
+  msgModal.modal('show');
+  if (row) {
+    row.css('cursor', 'progress');
+  }
+
+  if (!Navadmin.messageStore.findMessage(type, year, number)) {
+    console.log('No cached list entry for ' + messageName + '. Requesting its year metadata.');
+    getYearsForMsgType(type, [year], false, function() {
+      if (selectedMessage === message) {
+        setMessageTitle(message);
+      }
+    });
+  }
+
+  getMsgBody(type, year, number, function(body, errorText) {
+    if (row) {
+      row.css('cursor', 'pointer');
     }
 
-    // If no message modal shown, check if list needs to be refreshed
-    if (oldUserSelectedMsgType != userSelectedMsgType || oldUserSelectedMsgYear != userSelectedMsgYear) {
-      getMessageYearsAndMetadata()
+    if (displayedRows && body && Navadmin.messageStore.findMessage(type, year, number)) {
+      displayedRows.forEach(function(entry) {
+        if (entry.message.type == type && entry.message.year == year && entry.message.number == number) {
+          entry.row.find('th').addClass('offline-enabled');
+          entry.message.offline = true;
+        }
+      });
+    }
+    if (selectedMessage !== message) {
+      console.log('Ignoring the body result for ' + messageName + ' because the modal selection changed.');
+      return;
     }
 
-  }  
-});
+    setMessageTitle(message);
+    if (!body) {
+      var messageError = errorText || 'Message not found.';
+      console.log('Could not display ' + messageName + '. ' + messageError);
+      msgModalBody.text(messageError);
+      return;
+    }
+    msgModalBody.empty().append(linkDocumentAndMessageReferences(body, messageName, prepareAndShowMessageModal));
+
+    if (typeof analytics !== 'undefined') {
+      analytics.logEvent('ViewedMessage', { messageNumber: messageName });
+    }
+    sendViewActivity(type, year, number);
+  });
+}
+
+/**
+ * Update the modal title and page description using the cached subject.
+ * @param {Object} message The current message selection.
+ * @returns {string} The short message name used for reference matching.
+ */
+function setMessageTitle(message) {
+  var name = shortNameForMessage(message.type, message.year, message.number);
+  var cached = Navadmin.messageStore.findMessage(message.type, message.year, message.number);
+  var subject = cached && cached.title;
+  var title = name + (subject ? ' - ' + subject : '');
+  msgModalTitle.text(title);
+  document.title = title + ' - ' + NAVADMIN_VIEWER_TITLE;
+  if (pageDescription) {
+    pageDescription.setAttribute('content', subject || name);
+  }
+  return name;
+}
+
+/**
+ * Close the selected message and restore the originating list in browser history.
+ */
+function closeMessage() {
+  if (!selectedMessage) {
+    return;
+  }
+  var depth = selectedMessage.depth;
+  selectedMessage = null;
+  setListTitle();
+  Navadmin.navigation.closeMessage(listSelection, depth);
+}
+
+/**
+ * Show the shareable URL for the message currently open in the modal.
+ * @param {jQuery.Event} e The Share button click.
+ */
+function shareUserSelectedMessageLink(e) {
+  e.preventDefault();
+  if (selectedMessage) {
+    var link = Navadmin.navigation.shareLink(selectedMessage.type, selectedMessage.year, selectedMessage.number, true);
+    window.prompt('Copy the below share link to clipboard (\u229e Ctrl+C / \uf8ff \u2318+C)', link);
+  }
+}
+
+/**
+ * Open the store listing for the visitor’s platform.
+ * @param {jQuery.Event} e The App link click.
+ */
+function navigateToAppStore(e) {
+  e.preventDefault();
+  var appLink = getMobileOperatingSystem() == 'android'
+    ? 'https://play.google.com/store/apps/details?id=com.ansonliu.navadmin'
+    : 'https://apps.apple.com/us/app/navadmin-viewer/id1345135985';
+  window.location.assign(appLink);
+}

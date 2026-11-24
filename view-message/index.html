@@ -15,26 +15,10 @@
     <div id="wrapper"></div>
   </a>
 </body>
+<script src="../js/types.js"></script>
+<script src="../js/navigation.js"></script>
 <script>
-  /*
-   * https://www.tinabellvance.com/posts/getting-url-parameters-in-ie11-using-jquery-vanilla-javascript-and-es6/
-   */
-  function getUrlParameter(location, name) {
-    name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
-    var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
-    var results = regex.exec(location);
-    return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
-  };
-  var urlParamMsgType = getUrlParameter(window.location.href, 'type');
-  var urlParamMsgYear = getUrlParameter(window.location.href, 'year');
-  var urlParamMsgNumber = getUrlParameter(window.location.href, 'number');
-  var redirectLink = '../?type=';
-  redirectLink += urlParamMsgType;
-  redirectLink += '&year=';
-  redirectLink += urlParamMsgYear;
-  redirectLink += '&number=';
-  redirectLink += urlParamMsgNumber;
-  window.location.assign(redirectLink);
+  window.location.assign(Navadmin.navigation.redirectURL(window.location.search));
 </script>
 
 </html>

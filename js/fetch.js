@@ -1,450 +1,334 @@
 var server = 'https://navadmin-server.runs.io';
-var shareServer = 'https://navadmin-viewer.github.io';
 
-// Server request throttling
-var serverRequestCooldownSeconds = 600
+// Only successful metadata and broadcast requests have a cooldown.
+var serverRequestCooldownSeconds = 600;
+var requestThrottleByKey = new Map();
+var pendingCallbacksByRequestKey = new Map();
 
+/**
+ * Record the start of a cooldown or clear the throttle after a failed request.
+ * @param {string} data The key in the request throttle.
+ * @param {boolean} success Whether the request succeeded.
+ */
 function releaseActiveMetadataRequest(data, success) {
   if (success) {
-    var d = new Date()
-    activeMetadataRequests.set(data, d.getTime() + serverRequestCooldownSeconds * 1000) //Save the next time this request will be allowed
+    requestThrottleByKey.set(data, Date.now() + serverRequestCooldownSeconds * 1000);
   } else {
-    activeMetadataRequests.delete(data); // Or clear it so next request is always allowed
+    requestThrottleByKey.delete(data);
   }
 }
 
-function setActiveMetadataRequest(data) {
-  activeMetadataRequests.set(data, -1) // -1 means a request is in progress
-}
-
 /**
- * Check if there is an active network request for specified data.
- * @param {string} data The requested metadata
- * @param {boolean} forceUpdate Should we 
- * @returns {boolean} completionHandler Completion handler to run after request completes.
+ * Mark a request as in progress in the throttle.
+ * @param {string} data The key in the request throttle.
  */
-function checkIfActiveMetadataRequestAllowed(data, forceUpdate) {
-  var nextTimeRequestAllowed = activeMetadataRequests.get(data)
-  if (!nextTimeRequestAllowed) {
-    return true
-  } else if (nextTimeRequestAllowed == -1) {
-    console.log('Identical fetch request for ' + data + ' already in progress. ')
-    return false
-  }
-
-  var d = new Date()
-  if (d.getTime() < nextTimeRequestAllowed) {
-    console.log('Fetch request for ' + data + ' will be allowed to next run in ' + (nextTimeRequestAllowed - d.getTime()) + 'ms')
-    return false
-  }
-
-  return true
+function setActiveMetadataRequest(data) {
+  requestThrottleByKey.set(data, -1);
 }
 
 /**
- * Get years info for a MsgType. Set the msg year filter dropdown elements and dropdown button title.
- * @param {MsgType} msgType The message type to years for. 
- * @param {number[]} yearsToGetMetadata The message years to get metadata for and year to set the table contents to on request completion.
- * @param {boolean} getLatestYearMetadata Indicate whether another request should be initiated to get the latest retrieved year metadata from server.
- * @param {function} completionHandler Completion handler to run after request completes.
+ * Check whether the throttle allows a request for the given key.
+ * @param {string} data The key in the request throttle.
+ * @returns {boolean} True when the key has no throttle entry or its cooldown has expired.
+ */
+function checkIfActiveMetadataRequestAllowed(data) {
+  var nextTimeRequestAllowed = requestThrottleByKey.get(data);
+  if (nextTimeRequestAllowed === -1) {
+    console.log('Skipping request for ' + data + ' because it is already in progress.');
+    return false;
+  }
+
+  var remaining = nextTimeRequestAllowed - Date.now();
+  if (remaining > 0) {
+    console.log('Skipping request for ' + data + ' because its cooldown has ' + Math.ceil(remaining / 1000) + ' seconds left.');
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Register a request or join an identical request already in progress.
+ * @param {string} key The form data identifying the request.
+ * @param {function} [completionHandler] Receives the shared result.
+ * @returns {boolean} True when the caller should send a new network request.
+ */
+function startMessageRequest(key, completionHandler) {
+  var callbacks = pendingCallbacksByRequestKey.get(key);
+  if (callbacks) {
+    console.log('Joining the pending request for ' + key + '.');
+    if (completionHandler) {
+      callbacks.push(completionHandler);
+    }
+    return false;
+  }
+
+  pendingCallbacksByRequestKey.set(key, completionHandler ? [completionHandler] : []);
+  console.log('Starting a network request for ' + key + '.');
+  return true;
+}
+
+/**
+ * Remove the pending request and notify its callers so a callback can retry a failure.
+ * @param {string} key The form data identifying the request.
+ * @param {Array} result The arguments to pass to each waiting callback.
+ */
+function finishMessageRequest(key, result) {
+  var callbacks = pendingCallbacksByRequestKey.get(key);
+  pendingCallbacksByRequestKey.delete(key);
+  callbacks.forEach(function(callback) {
+    callback.apply(null, result);
+  });
+}
+
+/**
+ * Build the form parameters for a message body request.
+ * @param {MsgType} msgType The message type.
+ * @param {number} msgYear The message year.
+ * @param {number} msgNumber The message number.
+ * @returns {string} The form data used to identify the request.
+ */
+function messageBodyKey(msgType, msgYear, msgNumber) {
+  return 'type=' + msgTypeToString(msgType) + '&year=' + msgYear + '&number=' + msgNumber;
+}
+
+/**
+ * Refresh a message type's year list and requested message metadata in the cache.
+ * @param {MsgType} msgType The message type to fetch.
+ * @param {number[]} yearsToGetMetadata The years whose message metadata should be included. Pass an empty array for the year list alone.
+ * @param {boolean} getLatestYearMetadata Whether to start a follow-up metadata request for the latest year after success.
+ * @param {function} [completionHandler] Receives an object with requestOutcome and errorText.
+ *   The outcome is network after a successful response, cooldown when a recent success is reused,
+ *   or error when the request fails. The error text is null on success.
  */
 function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, completionHandler) {
-  console.log('Network fetch request received for ' + msgTypeToString(msgType) + ' ' + (yearsToGetMetadata ? yearsToGetMetadata : '[]') + ' ' + getLatestYearMetadata + ' ' + (completionHandler ? 'completionHandler' : 'no completionHander'));
-  var postData = '';
-  postData += 'type=';
-  postData += msgTypeToString(msgType);
-  if (yearsToGetMetadata)
-    yearsToGetMetadata.forEach(function(year, index) {
-      postData += '&';
-      postData += 'yearsMetadata=';
-      postData += year;
-    });
+  var postData = 'type=' + msgTypeToString(msgType);
+  (yearsToGetMetadata || []).forEach(function(year) {
+    postData += '&yearsMetadata=' + year;
+  });
 
-  //if (yearsToGetMetadata.length > 0)
-  //  debugger
+  function complete(requestOutcome, errorText) {
+    if (requestOutcome !== 'error' && getLatestYearMetadata) {
+      var latestYear = Navadmin.messageStore.latestYear(msgType);
+      if (latestYear > -1) {
+        console.log('Requesting metadata for the latest ' + msgTypeToString(msgType) + ' year, ' + latestYear + '.');
+        getYearsForMsgType(msgType, [latestYear], false, null);
+      }
+    }
+    if (completionHandler) {
+      completionHandler({ requestOutcome: requestOutcome, errorText: errorText });
+    }
+  }
 
-  //Check if we have an active request for the same data in progress already. 
-  if (checkIfActiveMetadataRequestAllowed(postData)) {
-    setActiveMetadataRequest(postData);
-  } else {
-    console.log('Network fetch request done for ' + msgTypeToString(msgType) + ' ' + (yearsToGetMetadata ? yearsToGetMetadata : '[]') + ' ' + getLatestYearMetadata + ' ' + (completionHandler ? 'completionHandler' : 'no completionHander'));
-    if (completionHandler)
-      completionHandler();
+  if (!pendingCallbacksByRequestKey.has(postData) && !checkIfActiveMetadataRequestAllowed(postData)) {
+    console.log('Using cached metadata for ' + postData + '.');
+    complete('cooldown', null);
+    return;
+  }
+
+  if (!startMessageRequest(postData, complete)) {
     return;
   }
 
   var request = $.ajax({
     url: server + '/messages',
-    method: "POST",
+    method: 'POST',
     data: postData,
-    dataType: "json",
-    complete: function(jqXHR, textStatus) {
-      console.log('Network fetch request done for ' + msgTypeToString(msgType) + ' ' + (yearsToGetMetadata ? yearsToGetMetadata : '[]') + ' ' + getLatestYearMetadata + ' ' + (completionHandler ? 'completionHandler' : 'no completionHander'));
-      if (completionHandler)
-        completionHandler();
-    }
+    dataType: 'json'
   });
-  request.done(function(data, textStatus, jqXHR) {
+  request.done(function(data) {
+    if (!data || data.status !== 0 || !data.years || typeof data.years !== 'object') {
+      console.log('The response for ' + postData + ' did not contain a successful year list.');
+      finishMessageRequest(postData, ['error', 'Unable to get the message list.']);
+      return;
+    }
+    var metadataChangedByMerge = Navadmin.messageStore.mergeMetadata(msgType, data.years);
+    var yearCount = Object.keys(data.years).length;
+    console.log('Received ' + yearCount + ' year entries for ' + postData + '. ' +
+      (metadataChangedByMerge ? 'Updated the cache.' : 'Cached message details match the response.'));
     releaseActiveMetadataRequest(postData, true);
-    var dataObj = data;
-    //Define alerting format for errors
-    function parseMessagesError(error) {
-      alert('Unable to get message list. ' + error ? error : '' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
-    }
-
-    if ('status' in dataObj) {
-      if (dataObj.status != 0) {
-        parseMessagesError();
-      }
-    } else {
-      parseMessagesError();
-    }
-
-    var yearInts = [];
-
-    var dataObj = data;
-    yearsMsgs = new Map();
-    if ('years' in dataObj) {
-      //Show error if no years returned
-      if (dataObj.years.length == 0)
-        parseMessagesError('Zero years found.');
-
-      for (var year in dataObj.years) {
-        var yearInt = parseInt(year);
-        if (yearInt != NaN) {
-          yearInts.push(yearInt);
-          yearsMsgs.set(yearInt, dataObj.years[year].msgSkeletons)
-        }
-      };
-    } else {
-      parseMessagesError('No years key found.');
-    }
-
-    //Sort year ints DESC order
-    yearInts.sort(function(a, b) {
-      return b - a;
-    });
-
-    //Create new map and set elements in map based on DESC sorted yearInts array order
-    var yearsMsgsDesc = new Map();
-    for (var i = 0; i < yearInts.length; i++) {
-      yearsMsgsDesc.set(yearInts[i], yearsMsgs.get(yearInts[i]));
-    }
-
-    // Cached year count does not match retrieved year count
-    if (cachedMessages && cachedMessages.get(msgType) && cachedMessages.get(msgType).size != yearsMsgsDesc.size) {
-      // TODO: Add only the missing years
-      console.log('Cached ' + msgTypeToString(msgType) + ' year count ' + cachedMessages.get(msgType).size + ' does not match server year count ' + yearsMsgsDesc.size + '. Reset cache for that message type.')
-
-      // Add missing years to cache (we go the other way around because the other map is sorted)
-      cachedMessages.get(msgType).forEach(function(v, k) {
-        console.log('Move year ' + k + ' data from cache to sorted map');
-        yearsMsgsDesc.set(k, v)
-      });
-
-      // Overwrite entire year cache from the sorted map
-      console.log('Overwrite ' + msgTypeToString(msgType) + ' from sorted map');
-      cachedMessages.set(msgType, yearsMsgsDesc);
-    }
-
-    // Cached data does not have this message type. Set years for the message type
-    if (cachedMessages && !cachedMessages.get(msgType)) {
-      console.log('Cache new map entry for ' + msgTypeToString(msgType))
-      cachedMessages.set(msgType, yearsMsgsDesc);
-    }
-
-    // Update message metadata for each year of the retrieved message type
-    if (cachedMessages && cachedMessages.get(msgType)) {
-      cachedMessages.get(msgType).forEach(function(_, y) {
-        if ((!cachedMessages.get(msgType).get(y) && yearsMsgsDesc.get(y)) || (cachedMessages.get(msgType).get(y) && yearsMsgsDesc.get(y) && cachedMessages.get(msgType).get(y).length < yearsMsgsDesc.get(y).length)) {
-          console.log('Cached ' + msgTypeToString(msgType) + ' ' + y +' msg count ' + (cachedMessages.get(msgType).get(y) ? cachedMessages.get(msgType).get(y).length : 'null') + ' does not match server year count ' + yearsMsgsDesc.get(y).length + '.');
-          if (cachedMessages.get(msgType).get(y)) {
-            for (var i = cachedMessages.get(msgType).get(y).length; i < yearsMsgsDesc.get(y).length; i++) {
-              console.log('Push message ' + i + ' metadata to cache');
-              cachedMessages.get(msgType).get(y).push(yearsMsgsDesc.get(y)[i]);
-            }
-          } else {
-            cachedMessages.get(msgType).set(y, yearsMsgsDesc.get(y));
-          }
-          
-        }
-      });
-    }
-
-    if (!cachedMessages) {
-      console.log('Create new cached messages variable')
-      cachedMessages = new Map();
-      cachedMessages.set(msgType, yearsMsgsDesc);
-    }
-
-    /*
-    //Unsupported DESC sort in IE 11 :(
-    //Sort yearsMsgs map in descending order by key (year number)
-    yearsMsgs = new Map([...yearsMsgs.entries()].sort(function(a, b) {
-      return b[0]>a[0]; 
-    }));
-    cachedMessages.set(msgType, yearsMsgs);
-    */
-
-    //If getLatestYearMetadata is true, make another request to the server for the latest year metadata
-    if (getLatestYearMetadata && yearInts.length > 0) {
-      console.log("Make follow up network request for message metadata for " + msgTypeToString(msgType) + ' ' + yearInts[0]);
-      setUIInLoadingStatus(true, 'Getting messages data');
-      getYearsForMsgType(msgType, [yearInts[0]], false, null);
-    } else {
-      //setUIInLoadingStatus(false, null);
-    }
-
-    
-    // if (userSelectedMsgType == msgType) {
-    //   setInterfaceYear = userSelectedMsgYear == -1 ? (yearsToGetMetadata.length ? yearsToGetMetadata[0] : -1) : userSelectedMsgYear
-    //   console.log('calling setFilterMsgYearDropdown' + (setInterfaceYear)+ ' from getYearsForMsgType' + msgTypeToString(msgType) + ' ' + yearsToGetMetadata + ' ' + getLatestYearMetadata + ' ' + completionHandler);
-    //   setFilterMsgYearDropdown(msgType, setInterfaceYear);
-    //   //setTableMessages will actually start another msg metadata fetch for the latest year on first load because the data is not stored in memory yet,
-    //   //but this second request will not conflict with the previous follow up network request for metadata because it will be detected as duplicate
-    //   console.log('calling setTableMessages' + (setInterfaceYear)+ ' from getYearsForMsgType' + msgTypeToString(msgType) + ' ' + yearsToGetMetadata + ' ' + getLatestYearMetadata + ' ' + completionHandler);
-    //   setTableMessages(msgType, setInterfaceYear); 
-
-    //   /*
-    //   //All years
-    //   cachedMessages.get(msgType).forEach(function (v, k) {
-    //     setTableMessages(cachedMessages.get(msgType).get(k))
-    //   });
-    //   */
-    // }
+    finishMessageRequest(postData, ['network', null]);
   });
-  request.fail(function(jqXHR, textStatus, errorThrown) {
-    console.log("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
-    releaseActiveMetadataRequest(postData, false);
-    setUIInLoadingStatus(false, "Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+  request.fail(function(jqXHR, textStatus) {
+    console.log('Metadata request failed for ' + postData + ' with status ' + textStatus + ' and HTTP status ' + jqXHR.status + '.');
+    finishMessageRequest(postData, ['error', 'Unable to get the message list.']);
   });
 }
 
 /**
- * Get message body text. 
- * @param {MsgType} msgType The message type. 
+ * Read a message body from the cache or fetch it independently of its list metadata.
+ * @param {MsgType} msgType The message type.
  * @param {number} msgYear The message year.
  * @param {number} msgNumber The message number.
+ * @param {function} [completionHandler] Receives (body, errorText). The body is null on failure and the error text is null on success.
  */
 function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
-  var postData = '';
-  postData += 'type=';
-  postData += msgTypeToString(msgType);
-  postData += '&year=';
-  postData += msgYear;
-  postData += '&number=';
-  postData += msgNumber;
-
-  //Check if we have an active request for the same data in progress already. 
-  if (checkIfActiveMetadataRequestAllowed(postData)) {
-    setActiveMetadataRequest(postData);
-  } else {
-    console.log('Fetch for getMsgBody completed')
-    if (completionHandler)
-      completionHandler();
+  var postData = messageBodyKey(msgType, msgYear, msgNumber);
+  var body = Navadmin.messageStore.getBody(msgType, msgYear, msgNumber);
+  if (body) {
+    console.log('Using the cached body for ' + postData + '.');
+    if (completionHandler) {
+      completionHandler(body, null);
+    }
     return;
   }
-
-  var messageSelectorText = msgTypeToString(msgType) + ' ' + pad(msgNumber, 3) + '/' + (msgYear % 1000).toString();
-
+  if (!startMessageRequest(postData, completionHandler)) {
+    return;
+  }
   var request = $.ajax({
     url: server + '/message',
-    method: "POST",
+    method: 'POST',
     data: postData,
-    dataType: "text",
-    complete: function(jqXHR, textStatus) {
-      console.log('Fetch for getMsgBody completed')
-      if (completionHandler)
-        completionHandler();
-    }
+    dataType: 'text'
   });
-  request.done(function(data, textStatus, jqXHR) {
-    //Check request HTTP status
-    if (jqXHR.status == 404 || data.length == 0) {
-      releaseActiveMetadataRequest(postData, false);
-      msgModalTitle.text(messageSelectorText);
-      msgModalBody.text('Message not found');
-    } else if (jqXHR.status == 503) {
-      releaseActiveMetadataRequest(postData, false);
-      msgModalTitle.text(messageSelectorText);
-      msgModalBody.text('Data is unavailable.' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
-    } else {
-      releaseActiveMetadataRequest(postData, true);
-      var cachedMsgType = cachedMessages ? cachedMessages.get(msgType) : null;
-      var cachedMsgYear = cachedMsgType ? cachedMsgType.get(msgYear) : null;
-      var cachedMsg = cachedMsgYear ? cachedMsgYear[msgNumber - 1] : null;
-
-      cachedMsg.Body = data;
-      //If the retrieved msg type is the currently the user selected message type or url passed message, show it.
-      // if (
-      //   (userSelectedMsgType == msgType && userSelectedMsgYear == msgYear && userSelectedMsgNumber == msgNumber) ||
-      //   (urlParamMsgType == msgType && urlParamMsgYear == msgYear && urlParamMsgNumber == msgNumber)
-      // ) {
-      //   showMessageModal(
-      //     msgType,
-      //     msgYear,
-      //     msgNumber,
-      //     (cachedMsg && cachedMsg.title.length > 0 ? cachedMsg.title : ''),
-      //     data
-      //   );
-      // }
+  request.done(function(data) {
+    if (!data) {
+      console.log('The server returned an empty body for ' + postData + '.');
+      finishMessageRequest(postData, [null, 'Message not found.']);
+      return;
     }
+    Navadmin.messageStore.saveBody(msgType, msgYear, msgNumber, data);
+    finishMessageRequest(postData, [data, null]);
   });
-
-  request.fail(function(jqXHR, textStatus, errorThrown) {
-    releaseActiveMetadataRequest(postData, false);
-    msgModalTitle.text(messageSelectorText);
-    msgModalBody.text("Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+  request.fail(function(jqXHR, textStatus) {
+    console.log('Message request failed for ' + postData + ' with status ' + textStatus + ' and HTTP status ' + jqXHR.status + '.');
+    var errorText = jqXHR.status === 404 ?
+      'Message text is not publicly released.' :
+      'Unable to get the message.';
+    finishMessageRequest(postData, [null, errorText]);
   });
 }
 
 /**
- * Get server broadcast and store/show it.
- * @param {function} completionHandler Completion handler to run after request completes.
+ * Fetch and display a new broadcast when visits and local storage allow it.
+ * @param {function} [completionHandler] Called after the request settles or is skipped by the throttle.
  */
 function getBroadcast(completionHandler) {
-  activeRequestBroadcastKey = 'broadcast'
-
-  //Check if we have an active request for the same data in progress already. 
-  if (checkIfActiveMetadataRequestAllowed(activeRequestBroadcastKey)) {
-    setActiveMetadataRequest(activeRequestBroadcastKey);
-  } else {
-    if (completionHandler)
+  var requestKey = 'broadcast';
+  var storageKey = 'nv-cachedBroadcast';
+  if (!checkIfActiveMetadataRequestAllowed(requestKey)) {
+    if (completionHandler) {
       completionHandler();
+    }
     return;
   }
 
+  setActiveMetadataRequest(requestKey);
   var request = $.ajax({
     url: server + '/broadcast',
-    method: "GET",
-    data: null,
-    dataType: "text",
-    complete: function(jqXHR, textStatus) {
-      if (completionHandler)
+    method: 'GET',
+    dataType: 'text',
+    complete: function() {
+      if (completionHandler) {
         completionHandler();
-    }
-  });
-  request.done(function(data, textStatus, jqXHR) {
-    //Check request HTTP status
-    if (jqXHR.status == 404 || data.length == 0) {
-      console.log('Broadcast - 404 or no data');
-      releaseActiveMetadataRequest(activeRequestBroadcastKey, true);
-    } else if (jqXHR.status == 503) {
-      console.log('Broadcast - Data is unavailable.' + '\nStatus: ' + textStatus + '\nServer returned error ' + dataObj.status + ' ' + dataObj.error);
-      releaseActiveMetadataRequest(activeRequestBroadcastKey, false);
-    } else {
-      releaseActiveMetadataRequest(activeRequestBroadcastKey, true);
-      if (getCookie(COOKIE_VISITS) > 1 && isLocalStorageSupported() && getKeyValueFromLocalStorage(cachedBroadcastLocalStorageKey) != data) {
-        if (data.length > 0) {
-          alert(data);
-        }
-        console.log('Saving new broadcast.')
-        saveKeyValueToLocalStorage(cachedBroadcastLocalStorageKey, data);
-      } else {
-        console.log('Suppressing broadcast because no cookie or localstorage support or user has already seen this broadcast.')
       }
     }
   });
+  request.done(function(data) {
+    releaseActiveMetadataRequest(requestKey, true);
+    if (!data) {
+      console.log('No broadcast is available.');
+      return;
+    }
+    if (!(getCookie(COOKIE_VISITS) > 1)) {
+      console.log('Skipping the broadcast on this visit because the visit count is below two.');
+      return;
+    }
+    if (!isLocalStorageSupported()) {
+      console.log('Skipping the broadcast because local storage is unavailable.');
+      return;
+    }
+    if (getKeyValueFromLocalStorage(storageKey) == data) {
+      console.log('Skipping the broadcast because it was already displayed.');
+      return;
+    }
 
-  request.fail(function(jqXHR, textStatus, errorThrown) {
-    releaseActiveMetadataRequest(activeRequestBroadcastKey, false);
-    console.log("Broadcast - Request failed\nStatus: " + textStatus + '\nHTTP error: ' + errorThrown);
+    console.log('Saving the new broadcast before displaying it in an alert.');
+    saveKeyValueToLocalStorage(storageKey, data);
+    alert(data);
+  });
+
+  request.fail(function(jqXHR, textStatus) {
+    releaseActiveMetadataRequest(requestKey, false);
+    console.log('Broadcast request failed with status ' + textStatus + ' and HTTP status ' + jqXHR.status + '.');
   });
 }
 
-function createMsgTypeDirectLink(msgType, redirection) {
-  var shareLink = shareServer + (redirection ? '/view-message/' : '/');
-  shareLink += '?type=';
-  shareLink += msgTypeToString(msgType);
-  return shareLink;
-}
+var viewActivityUUID;
+var viewRegistrationPending = false;
+var viewRegistrationSucceeded = false;
+var pendingViews = [];
 
-function createYearDirectLink(msgType, msgYear, redirection) {
-  var shareLink = shareServer + (redirection ? '/view-message/' : '/');
-  shareLink += '?type=';
-  shareLink += msgTypeToString(msgType);
-  shareLink += '&year=';
-  shareLink += msgYear;
-  return shareLink;
-}
-
-function createMessageDirectLink(msgType, msgYear, msgNumber, redirection) {
-  var shareLink = shareServer + (redirection ? '/view-message/' : '/');
-  shareLink += createURLParameters(msgType, msgYear, msgNumber);
-  return shareLink;
-}
-
-function createURLParameters(msgType, msgYear, msgNumber) {
-  var params = '?type=';
-  params += msgTypeToString(msgType);
-  if (msgYear >= 0) {
-    params += '&year=';
-    params += msgYear;
-  }
-  if (msgNumber >= 0) {
-    params += '&number=';
-    params += msgNumber;
-  }
-  return params;
+/**
+ * Submit one view after device registration succeeds.
+ * @param {string} postData The form data identifying the browser and message.
+ */
+function postViewActivity(postData) {
+  var request = $.ajax({
+    url: server + '/updateUserActivity',
+    method: 'POST',
+    data: postData
+  });
+  request.fail(function(jqXHR, textStatus) {
+    console.log('View activity request failed with status ' + textStatus + ' and HTTP status ' + jqXHR.status + '.');
+  });
 }
 
 /**
- * Send message view activity for view stats.
- * @param {MsgType} msgType The message type. 
+ * Record a message view for the browser. Views wait for device registration to succeed.
+ * @param {MsgType} msgType The message type.
  * @param {number} msgYear The message year.
  * @param {number} msgNumber The message number.
  */
 function sendViewActivity(msgType, msgYear, msgNumber) {
-  var uuid = getCookie('uuid');
-  if (uuid.length == 0) {
-    uuid = uuidv4();
-    setCookie('uuid', uuid);
+  if (!viewActivityUUID) {
+    viewActivityUUID = getCookie('uuid');
+    if (!viewActivityUUID) {
+      viewActivityUUID = uuidv4();
+      setCookie('uuid', viewActivityUUID);
+    }
   }
-  var postData = '';
-  postData += 'deviceUUID=';
-  postData += uuid;
-  postData += '&deviceOS=';
-  postData += window.navigator.platform ? window.navigator.platform : 'web';
-  postData += '&deviceName=';
-  postData += 'none';
 
-  //Check if we have an active request for the same data in progress already. 
-  if (activeMetadataRequests.get(postData))
+  var deviceData = 'deviceUUID=' + encodeURIComponent(viewActivityUUID);
+  var activityData = deviceData + '&activityType=view' +
+    '&activityMsgType=' + msgTypeToString(msgType) +
+    '&activityMsgYear=' + msgYear +
+    '&activityMsgNumber=' + msgNumber;
+
+  if (viewRegistrationSucceeded) {
+    postViewActivity(activityData);
     return;
-  else
-    activeMetadataRequests.set(postData, 1);
+  }
+  pendingViews.push(activityData);
+  if (viewRegistrationPending) {
+    console.log('Queued the message view because device registration is already in progress.');
+    return;
+  }
 
+  console.log('Registering the browser before sending queued message views.');
+  viewRegistrationPending = true;
   var request = $.ajax({
     url: server + '/updateUserInfo',
-    method: "POST",
-    data: postData,
-    dataType: "json"
+    method: 'POST',
+    data: deviceData +
+      '&deviceOS=' + encodeURIComponent(window.navigator.platform || 'web') +
+      '&deviceName=none',
+    dataType: 'json'
   });
-  request.done(function(data, textStatus, jqXHR) {
-    if ('status' in data) {
-      if (data.status == 0) {
-        var actPostData = '';
-        actPostData += 'deviceUUID=';
-        actPostData += uuid;
-        actPostData += '&activityType=';
-        actPostData += 'view';
-        actPostData += '&activityMsgType=';
-        actPostData += msgTypeToString(msgType);
-        actPostData += '&activityMsgYear=';
-        actPostData += msgYear;
-        actPostData += '&activityMsgNumber=';
-        actPostData += msgNumber;
-
-        var actRequest = $.ajax({
-          url: server + '/updateUserActivity',
-          method: "POST",
-          data: actPostData
-        });
-      }
+  request.done(function(data) {
+    viewRegistrationPending = false;
+    if (!data || data.status !== 0) {
+      console.log('Device registration was rejected. Views remain queued until a later view retries registration.');
+      return;
     }
-  });
 
-  request.fail(function(jqXHR, textStatus, errorThrown) {
-    console.log(errorThrown);
+    viewRegistrationSucceeded = true;
+    var views = pendingViews;
+    pendingViews = [];
+    console.log('Device registration succeeded. Sending ' + views.length + ' queued message views.');
+    views.forEach(postViewActivity);
+  });
+  request.fail(function(jqXHR, textStatus) {
+    viewRegistrationPending = false;
+    console.log('Device registration failed with status ' + textStatus + ' and HTTP status ' + jqXHR.status + '.');
   });
 }

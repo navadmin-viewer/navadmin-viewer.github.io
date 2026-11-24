@@ -6,6 +6,11 @@ MsgType = {
   UNKNOWN: 4
 }
 
+/**
+ * Convert a message type to its name in URLs and server requests.
+ * @param {MsgType} mt The message type.
+ * @returns {string} The message type name, or UNKNOWN.
+ */
 function msgTypeToString(mt) {
   switch (mt) {
     case MsgType.NAVADMIN:
@@ -21,6 +26,11 @@ function msgTypeToString(mt) {
   }
 }
 
+/**
+ * Read a message type name from a URL or server value.
+ * @param {string} mts The message type name.
+ * @returns {MsgType} The matching type, or MsgType.UNKNOWN.
+ */
 function stringToMsgType(mts) {
   switch (mts) {
     case 'NAVADMIN':

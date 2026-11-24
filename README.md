@@ -6,12 +6,12 @@ A fully featured [web app](https://navadmin-viewer.github.io/) for viewing Navy 
 
 [![NAVADMIN Viewer web screenshot](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/navadmin-viewer-web-screenshot.png)](https://navadmin-viewer.github.io/)
 
-## 🌐 Browser support tested 17MAR2025
+## 🌐 Browser support tested 23NOV2026
 
 ![Chrome](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/chrome_48x48.png) | ![IE 11](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/internet-explorer_9-11_48x48.png) | ![Edge](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/edge_12-18_48x48.png) | ![Safari](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/safari_48x48.png)| ![Firefox](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/master/assets/browser-logos/firefox_48x48.png) |
 --- | --- | --- | --- | --- |
  Chrome | IE 11 | Edge | Safari | Firefox |
- 133 ✔ | 11 ✔ | 134 (🪦 v44) ✔ | 13 ✔ | 75 ✔ |
+ 144 ✔ | 11 ✔ | 134 (🪦 v44) ✔ | 13 ✔ | 75 ✔ |
 
 ## 📝 How to use
 
@@ -19,9 +19,13 @@ A fully featured [web app](https://navadmin-viewer.github.io/) for viewing Navy 
 2. Select the message type and year to browse.
 3. Click the message you want to view.
 
+Search across all previously viewed years of the selected message type.
+
 ## 📡 Offline mode (added 17MAR2025)
 
-The web app will cache viewed messages offline so that message data will be instantly available next time! Messages are not all auto-downloaded in bulk because internet browsers restrict the storage to 5 megabytes. 😥
+The web app downloads messages for the viewed year. The year menu shows a ✓ when the year's downloads are saved in IndexedDB. If IndexedDB is unavailable or rejects writes, a yellow progress bar shows downloads cached in the current tab until you reload or close it. Choose **Download all years** to download every year for the current message type.
+
+When IndexedDB reports that storage is full, the viewer can remove the oldest eligible year of downloaded bodies for one message type to make room for newer messages. All removed bodies stay openable and searchable in the current tab until you reload or close it. Titles stay searchable after reload. Years you are viewing or downloading are protected.
 
 You can Save (Ctrl-S/Cmd-S) the main website to your computer to use when fully offline because some browsers may not load the online main page without an internet connection (even when the messages are already locally stored). Either save the main site locally or don't navigate away to another website while away from internet.
 

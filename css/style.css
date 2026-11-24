@@ -16,6 +16,18 @@ td a, td a:link, td a:visited, td a:link:active, td a:visited:active {
   text-decoration: none;
 }
 
+.message-search-snippet {
+  color: #495057;
+  font-size: 0.875rem;
+  word-wrap: break-word;
+}
+
+.message-search-snippet mark {
+  background-color: #ffeb80;
+  color: #212529;
+  padding: 0;
+}
+
 .stats-box p {
   white-space: nowrap;
   margin: 0;
@@ -33,13 +45,77 @@ footer {
   padding-right: 15pt;
 }
 
-#msg-search-scope-menu {
+.message-filters {
+  display: -ms-flexbox;
+  display: flex;
+  -ms-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -ms-flex-align: start;
+  align-items: flex-start;
+  width: 100%;
+  min-width: 0;
+}
+
+.message-filters .message-filter-buttons {
+  -ms-flex: 0 0 auto;
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+}
+
+.message-filters-buttons-fill .message-filter-buttons {
+  width: 100%;
+}
+
+.message-filters-buttons-fill .message-filter-buttons > .input-group-prepend,
+.message-filters-buttons-fill .message-filter-buttons > .input-group-prepend > .btn {
+  -ms-flex: 1 1 auto;
+  flex: 1 1 auto;
+}
+
+.message-filter-buttons .input-group-prepend:last-child {
+  margin-right: 0;
+}
+
+.message-filter-buttons .input-group-prepend:last-child > .btn {
+  border-top-right-radius: .25rem;
+  border-bottom-right-radius: .25rem;
+}
+
+.message-filters > #msg-search-input {
+  -ms-flex: 1 0 auto;
+  flex: 1 0 auto;
+  width: 50vw;
   min-width: 0;
   max-width: 100%;
 }
 
-#msg-search-scope-menu .dropdown-item {
+.message-search-scope-icon {
+  width: 1em;
+  height: 1em;
+  margin-right: .25em;
+  vertical-align: -.125em;
+}
+
+@media (max-width: 380px) {
+  .message-filter-buttons .btn {
+    padding-left: .125rem;
+    padding-right: .125rem;
+    font-size: .875rem;
+    min-height: 2.375rem;
+  }
+}
+
+.message-filters .dropdown-menu {
+  width: 10rem;
+  width: max-content;
+  min-width: 0;
+  max-width: calc(100vw - 2rem);
+}
+
+.message-filters .dropdown-item {
   white-space: normal;
+  word-wrap: break-word;
 }
 
 #msg-body-modal .modal-dialog {
@@ -87,7 +163,7 @@ footer {
 }
 
 @media (min-width: 992px) {
-  .input-group {
+  .message-filters {
     margin-left: 10pt;
     float: right
   }
@@ -98,4 +174,71 @@ footer {
 
 .offline-enabled {
   color: #009432;
+}
+
+.message-year-status {
+  display: inline-block;
+  margin-left: .5rem;
+  vertical-align: middle;
+}
+
+.message-year-progress {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.25rem;
+  height: 1rem;
+  vertical-align: middle;
+  overflow: hidden;
+  border-radius: .25rem;
+  background: #e9ecef;
+  color: #212529;
+  font-size: .75rem;
+}
+
+.message-year-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: #8bc8ff;
+}
+
+.message-year-progress-temporary {
+  background: #fff3cd;
+}
+
+.message-year-progress-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-image: linear-gradient(45deg, rgba(33, 37, 41, .15) 25%, transparent 25%,
+    transparent 50%, rgba(33, 37, 41, .15) 50%, rgba(33, 37, 41, .15) 75%, transparent 75%);
+  background-size: 1rem 1rem;
+  animation: progress-bar-stripes 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-year-progress-active::after {
+    animation: none;
+  }
+}
+
+.message-year-progress-count {
+  position: relative;
+  z-index: 1;
+}
+
+.message-year-complete {
+  color: #197540;
+  font-weight: bold;
+}
+
+.message-year-download-note {
+  margin-left: .35rem;
+  font-size: .75rem;
 }

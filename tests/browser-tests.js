@@ -11,6 +11,7 @@
   var cacheKey = 'nv-cachedMessages';
   var runId = '_' + Date.now() + '_' + Math.random().toString(36).slice(2);
   var linkedBody = 'Literal <tag> & source text\nSee NAVADMIN 002/25 and OPNAVINST 10126.5.';
+  var searchBody = 'A literal [Needle]+ <img src=x onerror="window.fixtureMarkupRan=true"> & more.\nSecond line.';
 
   frame.title = 'Viewer under test';
   frame.style.width = '100%';
@@ -53,14 +54,19 @@
     check();
   }
 
-  function open(scenario, url, ready, next) {
+  function watchViewerLoad(ready, next) {
     frame.onload = function () {
       app = frame.contentWindow;
       if (!app.jQuery) return;
       frame.onload = null;
       app.onerror = function (message) { report('FAIL: ' + currentStep + ': ' + message); };
+      assert((app.document.documentMode || 'modern') === mode, 'The viewer used a different document mode from the test page');
       waitFor(ready, next);
     };
+  }
+
+  function open(scenario, url, ready, next) {
+    watchViewerLoad(ready, next);
     frame.src = '/case/' + scenario + runId + '/' + url;
   }
 
@@ -70,7 +76,9 @@
 
   function menuItem(id, label) {
     var item = select('#' + id + '-dropdown-menu a').filter(function () {
-      return app.jQuery(this).text() === label;
+      var link = app.jQuery(this);
+      var yearLabel = link.find('.message-year-label');
+      return (yearLabel.length ? yearLabel.text() : link.text()) === label;
     });
     assert(item.length === 1, 'Expected one menu item for ' + label);
     return item;
@@ -105,6 +113,31 @@
     return select('#msg-list-table-body').text().indexOf(title) !== -1;
   }
 
+  function visibleRows() {
+    return select('#msg-list-table-body tr:visible');
+  }
+
+  function searchFor(query) {
+    select('#msg-search-input').val(query).trigger('input');
+  }
+
+  function messageRequests(requests) {
+    return requests.filter(function (request) { return request.endpoint === 'message'; });
+  }
+
+  function yearProgress(year) {
+    return menuItem('msg-year', year).find('.message-year-progress').text().trim();
+  }
+
+  function yearComplete(year) {
+    return menuItem('msg-year', year).find('.message-year-complete').text().trim() === '\u2713';
+  }
+
+  function warningProgress(year, count) {
+    return yearProgress(year) === count &&
+      menuItem('msg-year', year).find('.message-year-progress-fill').hasClass('bg-warning');
+  }
+
   function modalShown() {
     var modal = select('#msg-body-modal');
     var controller = modal.data('bs.modal');
@@ -137,34 +170,153 @@
     xhr.send();
   }
 
-  function firstCache() {
+  function firstCacheMessages() {
     var messages = ['Old subject', 'Second [Campaign]', 'Missing body', 'Slow missing body'].map(function (title, index) {
       return { type: 0, year: 2025, number: index + 1, title: title, cancelled: false, actSum: [] };
     });
     messages[0].Body = linkedBody;
-    localStorage.setItem(cacheKey, JSON.stringify(['window.Map', [[0, ['window.Map', [[2025, messages]]]]]]));
+    return messages;
   }
 
-  steps.push(['Refresh existing metadata and preserve an old offline cache', function (done) {
-    firstCache();
-    open('main', '', function () { return tableHas('First [Campaign]'); }, function () {
-      var row = select('#msg-list-table-body tr').last();
-      assert(row.hasClass('table-danger'), 'Cancellation was not refreshed');
-      assert(row.text().indexOf('37') >= 0, 'View count was not refreshed');
-      assert(row.find('th').hasClass('offline-enabled'), 'Existing offline body was lost');
+  function messagesWithBlankCacheBodies() {
+    var bodies = [linkedBody, '', '\r\n \t'];
+    return ['First [Campaign]', 'Second [Campaign]', 'Missing body'].map(function (title, index) {
+      return { type: 0, year: 2025, number: index + 1, title: title, Body: bodies[index] };
+    });
+  }
+
+  function seedMessageDatabase(scenario, version, years, done) {
+    var database = window.indexedDB || window.msIndexedDB;
+    var request = database.open(scenario + runId + ':nv-messageCache', version);
+    request.onupgradeneeded = function () {
+      var db = request.result;
+      var metadata = db.createObjectStore('metadata');
+      var bodies = db.createObjectStore('bodies');
+      var statuses = db.createObjectStore('statuses');
+      var now = Date.now();
+      years.forEach(function (entry) {
+        entry.messages.forEach(function (message) {
+          if (typeof message.Body !== 'string') return;
+          var key = 'NAVADMIN/' + entry.year + '/' + message.number;
+          bodies.put({ type: 0, year: entry.year, number: message.number, status: 200, body: message.Body, savedAt: now }, key);
+          statuses.put({ status: 200, savedAt: now }, key);
+          delete message.Body;
+        });
+        metadata.put({ type: 0, year: entry.year, messages: entry.messages }, 'NAVADMIN/' + entry.year);
+      });
+    };
+    request.onsuccess = function () {
+      request.result.close();
       done();
+    };
+    request.onerror = function () { report('FAIL: Could not seed message records'); };
+  }
+
+  function verifyBlankCacheRepair(scenario, done) {
+    open(scenario, '?type=NAVADMIN&year=2025', function () { return tableHas('First [Campaign]'); }, function () {
+      function isDownloaded(title) {
+        return messageLink(title).closest('tr').find('th').hasClass('offline-enabled');
+      }
+      assert(isDownloaded('First [Campaign]'), 'Repair lost a valid cached body');
+      assert(!isDownloaded('Second [Campaign]') && !isDownloaded('Missing body'), 'A blank body was marked downloaded');
+      clickRow('Second [Campaign]');
+      waitFor(function () {
+        return modalShown() && modalText() === 'Body of message 2' && yearComplete('2025');
+      }, function () {
+        assert(isDownloaded('Second [Campaign]') && !isDownloaded('Missing body'), 'Body and 404 statuses were confused');
+        recordRequests(scenario, function (requests) {
+          var bodies = messageRequests(requests);
+          assert(!bodies.some(function (request) { return request.form.number === '1'; }), 'Repair redownloaded valid text');
+          assert(bodies.some(function (request) { return request.form.number === '2' && request.httpStatus === 200; }) &&
+            bodies.some(function (request) { return request.form.number === '3' && request.httpStatus === 404; }),
+            'An invalid cached body did not trigger a fresh request');
+          done();
+        });
+      });
+    });
+  }
+
+  steps.push(['Repair blank entries already stored by IndexedDB version 1', function (done) {
+    seedMessageDatabase('blankidb', 1, [{ year: 2025, messages: messagesWithBlankCacheBodies() }], function () {
+      verifyBlankCacheRepair('blankidb', done);
+    });
+  }]);
+
+  steps.push(['Reload the repaired IndexedDB cache and search the preserved message text', function (done) {
+    closeModal();
+    waitFor(function () { return !modalShown() && !messageRoute(2); }, function () {
+      recordRequests('blankidb', function (initialRequests) {
+        watchViewerLoad(function () { return tableHas('First [Campaign]') && yearComplete('2025'); }, function () {
+          assert(messageLink('First [Campaign]').closest('tr').find('th').hasClass('offline-enabled'),
+            'The saved download indicator was lost on reload');
+          assert(messageLink('Second [Campaign]').closest('tr').find('th').hasClass('offline-enabled'),
+            'The downloaded replacement body was lost on reload');
+          assert(!messageLink('Missing body').closest('tr').find('th').hasClass('offline-enabled'),
+            'Reload marked an unavailable body downloaded');
+          assert(select('#msg-search-scope-dropdown .message-search-scope-label').text() === 'Full Message' &&
+            select('#msg-search-scope-full-message').attr('aria-checked') === 'true', 'Full Message was not selected by default');
+          searchFor('SOURCE TEXT');
+          waitFor(function () { return visibleRows().find('.message-search-snippet mark').text() === 'source text'; }, function () {
+            assert(visibleRows().length === 1 && visibleRows().find('a').text() === 'First [Campaign]',
+              'Full Message did not match the preserved body after reload');
+            recordRequests('blankidb', function (requests) {
+              assert(messageRequests(requests).length === messageRequests(initialRequests).length,
+                'Reload or Full Message search re-requested a settled body');
+              done();
+            });
+          });
+        });
+        app.location.reload();
+      });
+    });
+  }]);
+
+  steps.push(['Refresh existing metadata and preserve an old offline cache', function (done) {
+    seedMessageDatabase('main', 2, [{ year: 2025, messages: firstCacheMessages() }], function () {
+      open('main', '', function () { return tableHas('First [Campaign]'); }, function () {
+        var row = select('#msg-list-table-body tr').last();
+        assert(row.hasClass('table-danger'), 'Cancellation was not refreshed');
+        assert(row.text().indexOf('37') >= 0, 'View count was not refreshed');
+        assert(row.find('th').hasClass('offline-enabled'), 'Existing offline body was lost');
+        done();
+      });
     });
   }]);
 
   steps.push(['Search titles literally and clear the filter', function (done) {
+    select('#msg-search-scope-title').trigger('click');
     var search = select('#msg-search-input');
     search.val('[campaign]').trigger('paste');
     waitFor(function () { return select('#msg-list-table-body tr:visible').length === 2; }, function () {
-      search.val('[').trigger('input').trigger('keyup');
-      assert(select('#msg-list-table-body tr:visible').length === 2, 'Single bracket was not treated literally');
       search.val('').trigger('input').trigger('keyup');
       assert(select('#msg-list-table-body tr:visible').length === 4, 'Clearing search did not restore all rows');
-      done();
+      search.val('[').trigger('input').trigger('keyup');
+      waitFor(function () { return visibleRows().length === 2; }, function () {
+        searchFor('');
+        done();
+      });
+    });
+  }]);
+
+  steps.push(['Search titles in every year of the selected message type', function (done) {
+    open('archivesearch', '?type=NAVADMIN&year=2025', function () { return tableHas('First [Campaign]'); }, function () {
+      select('#msg-search-scope-title').trigger('click');
+      searchFor('202');
+      waitFor(function () { return visibleRows().length === 3; }, function () {
+        assert(tableHas('NAVADMIN 2024 subject') && tableHas('NAVADMIN 2022 subject'), 'Title search missed another year');
+        assert(select('#msg-year-dropdown').text() === '2025', 'Title search changed the selected year');
+        clickMenu('msg-type', 'ALNAV');
+        waitFor(function () { return visibleRows().length === 4 && tableHas('ALNAV 2022 subject'); }, function () {
+          assert(!tableHas('NAVADMIN 2022 subject'), 'Title search retained a different message type');
+          searchFor('');
+          assert(visibleRows().length === 1 && tableHas('ALNAV 2025 subject'), 'Clearing search did not restore the selected year');
+          recordRequests('archivesearch', function (requests) {
+            assert(messageRequests(requests).every(function (request) { return request.form.year === '2025'; }),
+              'Title search downloaded bodies from other years');
+            open('main', '', function () { return tableHas('First [Campaign]'); }, done);
+          });
+        });
+      });
     });
   }]);
 
@@ -192,17 +344,18 @@
   }]);
 
   steps.push(['Reuse metadata in flight when returning to a year', function (done) {
-    clickMenu('msg-year', '2022');
-    clickMenu('msg-year', '2023');
-    clickMenu('msg-year', '2022');
-    waitFor(function () { return tableHas('NAVADMIN 2022 subject'); }, function () {
-      recordRequests('main', function (requests) {
-        var requestsForYear = requests.filter(function (row) {
-          return row.endpoint === 'messages' && row.form.yearsMetadata === '2022';
+    open('pending', '', function () { return tableHas('First [Campaign]'); }, function () {
+      clickMenu('msg-year', '2022');
+      clickMenu('msg-year', '2023');
+      clickMenu('msg-year', '2022');
+      waitFor(function () { return tableHas('NAVADMIN 2022 subject'); }, function () {
+        recordRequests('pending', function (requests) {
+          var requestsForYear = requests.filter(function (row) {
+            return row.endpoint === 'messages' && row.form.yearsMetadata === '2022';
+          });
+          assert(requestsForYear.length === 1, 'Returning to the pending year sent multiple requests');
+          open('main', '', function () { return tableHas('First [Campaign]'); }, done);
         });
-        assert(requestsForYear.length === 1, 'Returning to the pending year sent multiple requests');
-        clickMenu('msg-year', '2025');
-        waitFor(function () { return tableHas('First [Campaign]'); }, done);
       });
     });
   }]);
@@ -242,22 +395,22 @@
   }]);
 
   steps.push(['Show a missing-body error without marking the row as offline', function (done) {
-    var opener = messageLink('Missing body')[0];
-    focus(opener);
-    opener.click();
-    var body = select('#msg-body-modal .modal-body');
-    assert(app.jQuery(body[0].firstChild).hasClass('spinner-border'), 'The spinner should precede the loading text');
-    assert(body.text() === 'Retrieving message\u2026', 'The modal should show its loading text');
-    assert(body.find('textarea').length === 0, 'The loading text should remain outside the message field');
-    waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
-      assert(body.find('.spinner-border').length === 0, 'The spinner stayed after the request failed');
-      assert(body.find('textarea').length === 0, 'The error should remain outside the message field');
-      var missing = select('#msg-list-table-body tr').filter(function () {
-        return app.jQuery(this).find('a').text() === 'Missing body';
+    open('modal', '', function () { return tableHas('Missing body'); }, function () {
+      var opener = messageLink('Missing body')[0];
+      focus(opener);
+      opener.click();
+      var body = select('#msg-body-modal .modal-body');
+      assert(app.jQuery(body[0].firstChild).hasClass('spinner-border'), 'The spinner should precede the loading text');
+      assert(body.text() === 'Retrieving message\u2026', 'The modal should show its loading text');
+      assert(body.find('textarea').length === 0, 'The loading text should remain outside the message field');
+      waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
+        assert(body.find('.spinner-border').length === 0, 'The spinner stayed after the request failed');
+        assert(body.find('textarea').length === 0, 'The error should remain outside the message field');
+        var missing = messageLink('Missing body').closest('tr');
+        assert(!missing.find('th').hasClass('offline-enabled'), 'A failed response was marked available offline');
+        closeModal();
+        waitFor(function () { return !modalShown() && !messageRoute(3) && isFocused(missing.find('a')[0]); }, done);
       });
-      assert(!missing.find('th').hasClass('offline-enabled'), 'A failed response was marked available offline');
-      closeModal();
-      waitFor(function () { return !modalShown() && !messageRoute(3) && isFocused(missing.find('a')[0]); }, done);
     });
   }]);
 
@@ -265,11 +418,10 @@
     clickRow('Slow missing body');
     app.prepareAndShowMessageModal(0, 2025, 2, null);
     waitFor(function () { return modalShown() && modalText() === 'Body of message 2'; }, function () {
-      setTimeout(function () {
+      waitFor(function () { return yearComplete('2025'); }, function () {
         assert(modalText() === 'Body of message 2' && messageRoute(2), 'A stale error changed the visible message');
-        app.Navadmin.messageStore.save();
         done();
-      }, 550);
+      });
     });
   }]);
 
@@ -289,8 +441,9 @@
       return modalShown() && modalText() === linkedBody;
     }, function () {
       recordRequests('offline', function (requests) {
-        assert(!requests.some(function (row) { return row.endpoint === 'message'; }), 'Offline reopen fetched the saved body');
-        app.getYearsForMsgType(0, [2025], false, function (result) {
+        assert(!messageRequests(requests).some(function (request) { return request.form.number === '1'; }),
+          'Offline reopen fetched the migrated body');
+        app.getYearsForMsgType(0, [2025], function (result) {
           assert(result.requestOutcome === 'error' && result.errorText, 'A failed metadata request did not report an error');
           done();
         });
@@ -312,7 +465,7 @@
           app.sendViewActivity(0, 2025, 3);
           setTimeout(function () {
             recordRequests('activity', function (requests) {
-              var bodyRequests = requests.filter(function (row) { return row.endpoint === 'message'; });
+              var bodyRequests = messageRequests(requests).filter(function (row) { return row.form.number === '8'; });
               var registrations = requests.filter(function (row) { return row.endpoint === 'updateUserInfo'; });
               var views = requests.filter(function (row) { return row.endpoint === 'updateUserActivity'; });
               assert(bodyRequests.length === 1, 'Concurrent callers sent multiple body requests');
@@ -351,9 +504,9 @@
 
       function refreshDuringCooldown(editCachedMessage) {
         var settled = false;
-        app.getYearsForMsgType = function (type, years, latest, complete) {
+        app.getYearsForMsgType = function (type, years, complete, background) {
           if (type !== 0 || years.length !== 1 || years[0] !== 2025) {
-            return getYears(type, years, latest, complete);
+            return getYears(type, years, complete, background);
           }
 
           // Change the same store object after the initial render and before the refresh settles.
@@ -365,7 +518,7 @@
             message.actSum[0].actNumber = 73;
           }
 
-          return getYears(type, years, latest, function (result) {
+          return getYears(type, years, function (result) {
             complete(result);
             var currentRow = select('#msg-list-table-body tr').last();
             assert(currentRow.find('a').text() === editedTitle, 'The table did not apply the edited cached title');
@@ -374,7 +527,7 @@
             assert(isFocused(currentRow.find('a')[0]), 'A table refresh lost the focused message link');
             assert(result.requestOutcome === 'cooldown' && result.errorText === null, 'The metadata request did not report its cooldown');
             settled = true;
-          });
+          }, background);
         };
 
         try {
@@ -385,7 +538,7 @@
         }
       }
 
-      getYears(0, [2023], false, function (result) {
+      getYears(0, [2023], function (result) {
         assert(result.requestOutcome === 'network' && result.errorText === null, 'The metadata response did not report its network outcome');
         refreshDuringCooldown(true);
         refreshDuringCooldown(false);
@@ -427,20 +580,572 @@
     });
   }]);
 
-  steps.push(['Load and save messages after the saved cache read throws', function (done) {
+  steps.push(['Use the session cache after an IndexedDB startup read throws', function (done) {
     var subject = 'NAVADMIN 2023 subject';
-    open('cacheread', '?type=NAVADMIN&year=2023', function () { return tableHas(subject); }, function () {
-      assert(app.cacheReadAttempts === 1, 'The viewer did not encounter the simulated cache read error');
+    open('cacheread', '?type=NAVADMIN&year=2023', function () {
+      return tableHas(subject) && warningProgress('2023', '1/1');
+    }, function () {
+      assert(app.cacheReadAttempts, 'The viewer did not encounter the simulated cache read error');
       clickRow(subject);
-      waitFor(function () { return modalShown() && modalText() === linkedBody; }, function () {
-        firstCache();
-        assert(app.Navadmin.messageStore.save() === true, 'The store did not save the new cache after the read error');
-        var savedCache = app.deserializeMapString(localStorage.getItem(cacheKey));
-        var years = savedCache && savedCache.get(0);
-        var messages = years && years.get(2023);
-        assert(messages && messages[0] && messages[0].title === subject && messages[0].Body === linkedBody,
-          'The new cache did not contain the downloaded message');
-        done();
+      waitFor(function () { return modalShown() && modalText() === linkedBody; }, done);
+    });
+  }]);
+
+  steps.push(['Download the selected year automatically and keep failures partial', function (done) {
+    open('bulk', '?type=NAVADMIN&year=2025', function () {
+      return tableHas('First [Campaign]') && yearProgress('2025') === '0/4';
+    }, function () {
+      select('#msg-year-dropdown')[0].click();
+      var active = menuItem('msg-year', '2025').find('.message-year-progress-active')[0];
+      assert(active && yearProgress('2025') === '0/4', 'The progress bar did not animate when the download started');
+      var reducedMotion = app.matchMedia && app.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      assert(app.getComputedStyle(active, ':after').animationName === (reducedMotion ? 'none' : 'progress-bar-stripes'),
+        'The progress animation did not honor the motion preference');
+      select('#msg-search-scope-full-message').trigger('click');
+      searchFor('[needle]+');
+      assert(!visibleRows().find('mark').length, 'Body search matched an unprocessed message');
+      waitFor(function () {
+        return yearProgress('2025') === '3/4' && visibleRows().length === 1 &&
+          menuItem('msg-year', '2025').find('.message-year-download-note').text() === 'Select year to retry';
+      }, function () {
+        assert(!yearComplete('2025'), 'A transient failure marked the year complete');
+        assert(!menuItem('msg-year', '2025').find('.message-year-progress-active').length, 'A paused download kept animating');
+        assert(menuItem('msg-year', '2025').find('.message-year-progress')[0] === active, 'The progress bar was replaced during the download');
+        assert(menuItem('msg-year', '2025').find('.message-year-label').text() === '2025', 'Progress changed the year label');
+        assert(!menuItem('msg-year', '2024').find('.message-year-progress').length, 'An unselected year showed download progress');
+        assert(visibleRows().find('a').text() === 'Second [Campaign]', 'Body results did not update after caching');
+        recordRequests('bulk', function (requests) {
+          var bodies = messageRequests(requests);
+          assert(bodies.length === 4 && bodies.every(function (request) {
+            return request.form.type === 'NAVADMIN' && request.form.year === '2025';
+          }), 'Background requests did not target exactly the selected year');
+          assert(bodies.some(function (request) { return request.form.number === '3' && request.httpStatus === 404; }),
+            'Download progress did not include the unavailable message');
+          done();
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Search and highlight literal body text without rendering markup', function (done) {
+    var snippet = visibleRows().find('.message-search-snippet');
+    assert(snippet.find('mark').text() === '[Needle]+', 'The result did not highlight the literal body match');
+    assert(snippet.text().indexOf('<img') >= 0 && !snippet.find('img').length, 'The snippet interpreted body markup');
+    clickRow('Second [Campaign]');
+    waitFor(function () { return modalShown() && modalText() === searchBody; }, function () {
+      var body = select('#msg-body-modal .modal-body');
+      assert(!body.find('img').length && !app.fixtureMarkupRan, 'The modal interpreted body markup');
+      closeModal();
+      waitFor(function () { return !modalShown() && !messageRoute(2); }, function () {
+        select('#msg-search-scope-title').trigger('click');
+        waitFor(function () { return visibleRows().length === 0; }, function () {
+          searchFor('[campaign]');
+          waitFor(function () { return visibleRows().length === 2; }, function () {
+            select('#msg-search-scope-full-message').trigger('click');
+            waitFor(function () { return visibleRows().length === 0; }, function () {
+              searchFor('');
+              assert(visibleRows().length === 4 && !visibleRows().find('.message-search-snippet').length,
+                'Clearing body search did not restore the complete list');
+              done();
+            });
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep archive search and year progress stable on a warm year switch', function (done) {
+    var currentSubject = 'NAVADMIN 2023 subject';
+    var refreshedSubject = 'NAVADMIN 2024 subject';
+    var cachedSubject = 'Previously cached 2024 subject';
+    open('warmyearswitch', '?type=NAVADMIN&year=2023', function () {
+      return tableHas(currentSubject) && yearComplete('2023') && app.jQuery.active === 0;
+    }, function () {
+      clickMenu('msg-year', '2024');
+      waitFor(function () {
+        return tableHas(refreshedSubject) && yearComplete('2024') && app.jQuery.active === 0;
+      }, function () {
+        var store = app.Navadmin.messageStore;
+        store.findMessage(0, 2024, 1).title = cachedSubject;
+        searchFor('source text');
+        waitFor(function () {
+          var search = app.activeSearch;
+          return tableHas(currentSubject) && tableHas(cachedSubject) && search && !search.timer && !search.running &&
+            !app.yearStatusTimer;
+        }, function () {
+          var search = app.activeSearch;
+          var getBodyStatus = store.getBodyStatus;
+          var unrelatedChecks = 0;
+          store.getBodyStatus = function (type, year, number) {
+            if (type === 0 && year === 2024) {
+              unrelatedChecks++;
+              return null;
+            }
+            return getBodyStatus(type, year, number);
+          };
+
+          clickMenu('msg-year', '2023');
+          assert(select('#msg-year-dropdown').text() === '2023', 'The cached year switch did not settle');
+          assert(app.activeSearch === search && !search.timer && !search.running && tableHas(cachedSubject),
+            'An unchanged year switch reran the archive search');
+          assert(!unrelatedChecks && yearComplete('2024'), 'The year switch recalculated unrelated progress');
+
+          var yearButton = select('#msg-year-dropdown')[0];
+          yearButton.click();
+          assert(unrelatedChecks > 0 && yearProgress('2024') === '0/1', 'Opening the year menu did not refresh progress');
+          store.getBodyStatus = getBodyStatus;
+          yearButton.click();
+
+          var metadataKey = 'type=NAVADMIN&yearsMetadata=2024';
+          app.requestThrottleByKey.delete(metadataKey);
+          clickMenu('msg-year', '2024');
+          assert(app.pendingCallbacksByRequestKey.has(metadataKey), 'The changed title request did not start');
+          clickMenu('msg-year', '2023');
+          waitFor(function () { return tableHas(refreshedSubject) && !tableHas(cachedSubject); }, function () {
+            assert(select('#msg-year-dropdown').text() === '2023', 'Late archive metadata changed the selected year');
+            done();
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Continue Full Message search with memory and other years after a read fails', function (done) {
+    var scenario = 'searchreadfailure';
+    var readableSubject = 'NAVADMIN 2023 subject';
+    var unreadableSubject = 'Unreadable archive subject';
+    var memorySubject = 'In-memory archive subject';
+    var years = [
+      { year: 2025, messages: [
+        { type: 0, year: 2025, number: 1, title: unreadableSubject, Body: linkedBody },
+        { type: 0, year: 2025, number: 2, title: memorySubject }
+      ] },
+      { year: 2023, messages: [{ type: 0, year: 2023, number: 1, title: readableSubject, Body: linkedBody }] }
+    ];
+    seedMessageDatabase(scenario, 2, years, function () {
+      open(scenario, '?type=NAVADMIN&year=2023', function () {
+        return tableHas(readableSubject) && yearComplete('2023');
+      }, function () {
+        var prototype = app.IDBObjectStore.prototype;
+        var openCursor = prototype.openCursor;
+        var put = prototype.put;
+        var failedReads = 0;
+        prototype.openCursor = function (range) {
+          if (this.name === 'bodies' && range && range.lower === 'NAVADMIN/2025/') {
+            failedReads++;
+            throw new Error('Test interrupted body cursor');
+          }
+          return openCursor.apply(this, arguments);
+        };
+        prototype.put = function () {
+          if (this.name === 'bodies') throw new Error('Test denied body write');
+          return put.apply(this, arguments);
+        };
+
+        var store = app.Navadmin.messageStore;
+        store.saveBodyResult(0, 2025, 2, linkedBody, 200, function () {
+          prototype.put = put;
+          searchFor('source text');
+          waitFor(function () {
+            return visibleRows().find('mark').length >= 2;
+          }, function () {
+            assert(failedReads === 1, 'Search attempted to read the failed year again');
+            assert(!store.getBodyStatus(0, 2025, 2).persistent, 'The fixture body was saved to IndexedDB');
+            assert(tableHas(memorySubject) && tableHas(readableSubject) && !tableHas(unreadableSubject),
+              'Search missed available matches after the interrupted read');
+            prototype.openCursor = openCursor;
+            done();
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Yield to typing during a large full-message search after switching years', function (done) {
+    var messagesPerYear = 300;
+    var body = Array(61).join('Cached text with line breaks\r\nand irregular   spacing. ') + 'archive hit';
+    var years = [2025, 2023].map(function (year) {
+      var messages = [];
+      for (var number = 1; number <= messagesPerYear; number++) {
+        messages.push({ type: 0, year: year, number: number, title: 'Archive ' + year + '/' + number,
+          Body: year === 2025 && number === messagesPerYear ? body + ' and final archive hit' : body });
+      }
+      return { year: year, messages: messages };
+    });
+    seedMessageDatabase('searchburst', 2, years, function () {
+      open('searchburst', '?type=NAVADMIN&year=2025', function () {
+        return tableHas('Archive 2025/300') && select('#msg-year-dropdown-menu [data-message-year="2024"]').length;
+      }, function () {
+        var originalCreate = app.createMessageRow;
+        var table = select('#msg-list-table-body')[0];
+        var created = 0;
+        var typedDuringSearch = false;
+        app.createMessageRow = function (message) {
+          if (message.year === 2025 && message.snippet && ++created === 1) {
+            setTimeout(function () {
+              typedDuringSearch = table.querySelectorAll('mark').length < messagesPerYear;
+              searchFor('final archive hit');
+            }, 0);
+          }
+          return originalCreate(message);
+        };
+        clickMenu('msg-year', '2024');
+        searchFor('a');
+        searchFor('arch');
+        searchFor('archive hit');
+        assert(!created, 'Typing synchronously constructed search result rows');
+        waitFor(function () {
+          var mark = table.querySelector('mark');
+          return mark && mark.textContent === 'final archive hit' && table.rows.length === 1;
+        }, function () {
+          assert(typedDuringSearch, 'The result builder did not yield before committing the large result set');
+          assert(tableHas('Archive 2025/300'), 'The latest query lost a result outside the selected year');
+          searchFor('archive hit');
+          waitFor(function () { return table.rows.length === 2 * messagesPerYear + 1 && yearComplete('2024'); }, function () {
+            assert(tableHas('Archive 2023/300') && tableHas('NAVADMIN 2024 subject'), 'Search missed cached or newly downloaded text');
+            assert(select('#msg-year-dropdown').text() === '2024', 'Search changed the selected year');
+            searchFor('');
+            assert(table.rows.length === 1 && !table.querySelector('mark'), 'Clearing search did not restore the selected year');
+            done();
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep slots busy and prefer the selected year once its downloads are queued', function (done) {
+    open('priority', '?type=NAVADMIN&year=2025', function () {
+      return tableHas('First [Campaign]') && menuItem('msg-year', '2025').find('.message-year-progress-active').length;
+    }, function () {
+      clickMenu('msg-year', '2024');
+      assert(menuItem('msg-year', '2025').find('.message-year-progress-active').length,
+        'Switching years stopped the downloads already in progress');
+      waitFor(function () { return yearComplete('2024') && yearComplete('2025'); }, function () {
+        recordRequests('priority', function (requests) {
+          var fetched = messageRequests(requests).map(function (request) {
+            return request.form.year + '/' + request.form.number;
+          });
+          var starts = app.fixtureQueueStarts;
+          assert(app.fixtureQueuePeak === 4, 'The download queue did not limit concurrency to four');
+          var oldWorkWhileLoading = starts.filter(function (request) {
+            return request.selectedYear === '2024' && !request.selectedListReady && request.key.indexOf('2025/') === 0;
+          });
+          var workAfterList = starts.filter(function (request) { return request.selectedListReady; });
+          var expected = ['2024/1'];
+          for (var number = 1; number <= 11; number++) expected.push('2025/' + number);
+          assert(fetched.sort().join(',') === expected.sort().join(','),
+            'Switching years lost or repeated a download');
+          assert(oldWorkWhileLoading.length, 'The previous year could not start a queued download while the selected list was loading');
+          assert(workAfterList.length > 1 && workAfterList[0].key === '2024/1',
+            'The selected year did not get the first free slot once its list was ready. Starts after readiness: ' +
+            workAfterList.map(function (request) { return request.key; }).join(', '));
+          assert(select('#msg-year-dropdown').text() === '2024', 'Download completion changed the selected year');
+          done();
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep a previously started year animating while its remaining downloads wait', function (done) {
+    open('waitinganimation', '?type=NAVADMIN&year=2025', function () {
+      return tableHas('First [Campaign]') && menuItem('msg-year', '2025').find('.message-year-progress-active').length;
+    }, function () {
+      var bar = menuItem('msg-year', '2025').find('.message-year-progress')[0];
+      clickMenu('msg-year', '2024');
+      waitFor(function () {
+        var earlierYear = app.fixtureQueueStarts.filter(function (request) { return request.key.indexOf('2025/') === 0; });
+        var currentYear = app.fixtureQueueStarts.filter(function (request) { return request.key.indexOf('2024/') === 0; });
+        return earlierYear.length > 0 && earlierYear.length < 11 &&
+          earlierYear.every(function (request) { return request.settled; }) &&
+          currentYear.some(function (request) { return !request.settled; });
+      }, function () {
+        var previous = menuItem('msg-year', '2025').find('.message-year-progress-active');
+        assert(previous.length, 'The earlier year stopped animating while its queued work was waiting');
+        assert(previous[0] === bar, 'Changing years replaced the earlier year\'s progress bar');
+        waitFor(function () { return yearComplete('2025') && yearComplete('2024'); }, done);
+      });
+    });
+  }]);
+
+  steps.push(['Reuse saved bodies and retry an unresolved year through Download all years', function (done) {
+    open('bulkresume', '?type=NAVADMIN&year=2025', function () {
+      return tableHas('First [Campaign]') && yearProgress('2025') === '3/4';
+    }, function () {
+      recordRequests('bulkresume', function (requests) {
+        assert(messageRequests(requests).every(function (request) { return request.form.number === '4'; }),
+          'A reload requested settled bodies again');
+        clickMenu('msg-year', '2024');
+        waitFor(function () { return tableHas('NAVADMIN 2024 subject') && yearComplete('2024'); }, function () {
+          select('#msg-search-scope-full-message').trigger('click');
+          searchFor('source text');
+          waitFor(function () {
+            return visibleRows().length === 2 && tableHas('First [Campaign]') && tableHas('NAVADMIN 2024 subject') &&
+              menuItem('msg-year', '2025').find('.message-year-download-note').text() === 'Select year to retry';
+          }, startBulkDownload);
+        });
+        function startBulkDownload() {
+          var route = app.location.href;
+          var historyLength = app.history.length;
+          var button = select('#msg-download-all-years');
+          assert(button.text().trim() === 'Download all years', 'The bulk action was not labeled');
+          var menu = select('#msg-year-dropdown-menu');
+          assert(menu.find('a, button').last()[0] === button[0], 'The bulk action was not the last year menu entry');
+          button.trigger('click');
+          waitFor(function () {
+            return ['2022', '2023', '2024', '2025'].every(yearComplete) && visibleRows().length === 4;
+          }, function () {
+            assert(app.location.href === route && app.history.length === historyLength, 'The bulk action changed browser history');
+            assert(select('#msg-year-dropdown').text() === '2024' && select('#msg-search-input').val() === 'source text',
+              'Bulk completion changed the selected year or search query');
+            assert(tableHas('NAVADMIN 2022 subject') && tableHas('NAVADMIN 2024 subject'), 'Full Message did not include newly saved years');
+            recordRequests('bulkresume', function (bulkRequests) {
+              var bodies = messageRequests(bulkRequests);
+              var retried = bodies.filter(function (request) {
+                return request.form.year === '2025' && request.form.number === '4';
+              });
+              assert(retried.length === 2 && retried[0].httpStatus === 503 && retried[1].httpStatus === 200,
+                'All-year downloading did not retry the unresolved body');
+              assert(bodies.every(function (request) { return request.form.type === 'NAVADMIN'; }),
+                'All-year downloading fetched an unselected message type');
+              searchFor('');
+              app.history.back();
+              waitFor(function () { return tableHas('First [Campaign]') && app.location.search.indexOf('year=2025') >= 0; }, done);
+            });
+          });
+        }
+      });
+    });
+  }]);
+
+  steps.push(['Reopen downloaded years and unavailable messages offline', function (done) {
+    open('bulkoffline', '?type=NAVADMIN&year=2025', function () {
+      return tableHas('First [Campaign]') && yearComplete('2025') && yearComplete('2023');
+    }, function () {
+      clickRow('Missing body');
+      waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
+        closeModal();
+        waitFor(function () { return !modalShown() && !messageRoute(3); }, function () {
+          clickMenu('msg-year', '2023');
+          waitFor(function () { return tableHas('NAVADMIN 2023 subject'); }, function () {
+            clickRow('NAVADMIN 2023 subject');
+            waitFor(function () { return modalShown() && modalText() === linkedBody; }, function () {
+              recordRequests('bulkoffline', function (requests) {
+                assert(!messageRequests(requests).length, 'The offline reopen fetched already settled bodies');
+                done();
+              });
+            });
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep viewed years searchable in memory with yellow progress when IndexedDB is disabled', function (done) {
+    var oldMessages = [{ type: 0, year: 2025, number: 1, title: 'Old localStorage title', Body: 'Old localStorage body' }];
+    localStorage.setItem(cacheKey, JSON.stringify(['window.Map', [[0, ['window.Map', [[2025, oldMessages]]]]]]));
+    open('sessioncache', '?type=NAVADMIN&year=2025', function () {
+      return tableHas('First [Campaign]') && warningProgress('2025', '0/4') &&
+        menuItem('msg-year', '2025').find('.message-year-progress-active').length;
+    }, function () {
+      clickMenu('msg-year', '2024');
+      searchFor('source text');
+      waitFor(function () {
+        return warningProgress('2025', '4/4') && warningProgress('2024', '1/1') &&
+          tableHas('First [Campaign]') && tableHas('NAVADMIN 2024 subject');
+      }, function () {
+        assert(!yearComplete('2025') && !yearComplete('2024'), 'Session downloads showed a persistent checkmark');
+        var current = menuItem('msg-year', '2024').find('.message-year-progress');
+        assert(!current.hasClass('message-year-progress-active') && /until reload/.test(current.attr('aria-valuetext')),
+          'The completed session bar did not describe its temporary cache');
+        searchFor('');
+        clickMenu('msg-year', '2025');
+        clickRow('Missing body');
+        waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
+          recordRequests('sessioncache', function (requests) {
+            assert(messageRequests(requests).length === 5, 'Revisiting a session-cached year fetched a body again');
+            assert(localStorage.getItem(cacheKey) && localStorage.getItem('nv-messageCache:bodies:NAVADMIN/2025/1') === null,
+              'The viewer accessed the legacy cache or wrote a new localStorage body');
+            localStorage.removeItem(cacheKey);
+            open('sessioncache', '?type=NAVADMIN&year=2025', function () {
+              return tableHas('First [Campaign]') && warningProgress('2025', '0/4');
+            }, function () {
+              assert(!yearComplete('2025') && !yearProgress('2024'), 'Reload kept the previous tab cache');
+              waitFor(function () { return warningProgress('2025', '4/4'); }, done);
+            });
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep all quota-evicted years searchable and openable in memory', function (done) {
+    var scenario = 'quotaeviction';
+    var olderSubjects = ['Retained older archive subject 2023', 'Retained older archive subject 2024'];
+    var olderBodies = [linkedBody + '\n2023 session-only fixture', linkedBody + '\n2024 session-only fixture'];
+    var years = [{ year: 2022, messages: [{ type: 0, year: 2022, number: 1, title: 'NAVADMIN 2022 subject', Body: linkedBody }] }];
+    [2023, 2024].forEach(function (year, index) {
+      years.push({ year: year, messages: [{ type: 0, year: year, number: 1, title: olderSubjects[index], Body: olderBodies[index] }] });
+    });
+    years.push({ year: 2025, messages: [
+      { type: 0, year: 2025, number: 1, title: 'First recent archive subject' },
+      { type: 0, year: 2025, number: 2, title: 'Second recent archive subject' },
+      { type: 0, year: 2025, number: 3, title: 'Third recent archive subject' }
+    ] });
+
+    seedMessageDatabase(scenario, 2, years, function () {
+      open(scenario, '?type=NAVADMIN&year=2022', function () {
+        return tableHas('NAVADMIN 2022 subject') && yearComplete('2022') && yearComplete('2023') && yearComplete('2024');
+      }, function () {
+        var store = app.Navadmin.messageStore;
+        var prototype = app.IDBObjectStore.prototype;
+        var put = prototype.put;
+        var failedWrites = {};
+        var completed = 0;
+        prototype.put = function (record, key) {
+          if (this.name === 'bodies' && key.indexOf('NAVADMIN/2025/') === 0 && !failedWrites[key]) {
+            failedWrites[key] = true;
+            var error = new Error('Test IndexedDB cache is full');
+            error.name = 'QuotaExceededError';
+            throw error;
+          }
+          return put.apply(this, arguments);
+        };
+
+        function recordSaved(record) {
+          app.Navadmin.messageDownloads.recordAvailable(record);
+          completed++;
+        }
+
+        function verifyOfflineReopen() {
+          open('quotaevictionoffline', '?type=NAVADMIN&year=2022', function () {
+            return tableHas('NAVADMIN 2022 subject') && yearComplete('2025');
+          }, function () {
+            var reloadedStore = app.Navadmin.messageStore;
+            assert(!yearProgress('2023') && !yearProgress('2024') && !yearComplete('2023') && !yearComplete('2024'),
+              'A session-only year was still marked downloaded after reload');
+            reloadedStore.getBodyRecord(0, 2023, 1, function (firstRecord) {
+              assert(!firstRecord, 'The first evicted body was still stored in IndexedDB');
+              reloadedStore.getBodyRecord(0, 2024, 1, function (secondRecord) {
+                assert(!secondRecord, 'The second evicted body was still stored in IndexedDB');
+                select('#msg-search-scope-title').trigger('click');
+                searchFor('Retained older archive subject');
+                waitFor(function () { return olderSubjects.every(tableHas); }, done);
+              });
+            });
+          });
+        }
+
+        function verifyOpeningEvictedBody(index, next) {
+          clickRow(olderSubjects[index]);
+          waitFor(function () { return modalShown() && modalText() === olderBodies[index]; }, function () {
+            closeModal();
+            waitFor(function () { return !modalShown() && !messageRoute(1); }, next);
+          });
+        }
+
+        searchFor('source text');
+        waitFor(function () { return olderSubjects.every(tableHas); }, function () {
+          store.saveBodyResult(0, 2025, 1, linkedBody, 200, recordSaved);
+          store.saveBodyResult(0, 2025, 2, linkedBody, 200, recordSaved);
+          waitFor(function () {
+            return completed === 2 && yearProgress('2025') === '2/3' && warningProgress('2023', '1/1') &&
+              tableHas('First recent archive subject');
+          }, function () {
+            assert(Object.keys(failedWrites).length === 2, 'Both concurrent writes should encounter quota');
+            assert(yearComplete('2022'), 'Quota recovery removed the selected year');
+            assert(yearComplete('2024'), 'Concurrent quota errors evicted a second year');
+            assert(tableHas(olderSubjects[0]), 'The active search lost the first evicted year');
+
+            store.saveBodyResult(0, 2025, 3, linkedBody, 200, recordSaved);
+            waitFor(function () {
+              return completed === 3 && yearComplete('2025') && warningProgress('2024', '1/1') &&
+                tableHas('Third recent archive subject');
+            }, function () {
+              prototype.put = put;
+              assert(Object.keys(failedWrites).length === 3, 'The third body did not trigger a new quota recovery');
+              assert(yearComplete('2022') && warningProgress('2023', '1/1') && !yearComplete('2023') && !yearComplete('2024'),
+                'The year indicators did not distinguish persistent and session-only bodies');
+              searchFor('session-only fixture');
+              waitFor(function () { return olderSubjects.every(tableHas) && visibleRows().length === 2; }, function () {
+                verifyOpeningEvictedBody(0, function () {
+                  verifyOpeningEvictedBody(1, function () {
+                    recordRequests(scenario, function (requests) {
+                      assert(!messageRequests(requests).some(function (request) {
+                        return request.form.year === '2023' || request.form.year === '2024';
+                      }), 'Opening an evicted message fetched it again');
+                      verifyOfflineReopen();
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Complete downloads in memory when IndexedDB reaches quota', function (done) {
+    var newerYear = { year: 2026, messages: [
+      { type: 0, year: 2026, number: 1, title: 'Newer retained archive subject', Body: linkedBody }
+    ] };
+    seedMessageDatabase('quota', 2, [newerYear], function () {
+      open('quota', '?type=NAVADMIN&year=2025', function () {
+        return tableHas('First [Campaign]') && warningProgress('2025', '4/4');
+      }, function () {
+        assert(!yearComplete('2025'), 'A year with session-only bodies showed a checkmark');
+        assert(yearComplete('2026'), 'Quota recovery removed a newer year');
+        assert([1, 2, 3, 4].filter(function (number) {
+          return app.Navadmin.messageStore.getBodyStatus(0, 2025, number).persistent;
+        }).length === 2, 'The quota error changed the status of the earlier writes');
+        open('quotaoffline', '?type=NAVADMIN&year=2025', function () {
+          return tableHas('First [Campaign]') && yearProgress('2025') === '2/4';
+        }, function () {
+          assert(!warningProgress('2025', '2/4'), 'The reloaded year marked its persisted messages temporary');
+          assert(yearComplete('2026'), 'The newer year was missing after reload');
+          done();
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep IndexedDB reads and cache new downloads in memory when writes abort', function (done) {
+    open('writefallbackseed', '?type=NAVADMIN&year=2023', function () {
+      return tableHas('NAVADMIN 2023 subject') && yearComplete('2023');
+    }, function () {
+      open('writefallback', '?type=NAVADMIN&year=2025', function () {
+        return tableHas('First [Campaign]') && warningProgress('2025', '4/4');
+      }, function () {
+        assert(app.deniedDatabaseBodyWrites > 0, 'The simulated IndexedDB body write did not fail');
+        assert(yearComplete('2023') && !yearComplete('2025'), 'The two years did not show their different storage states');
+        searchFor('source text');
+        waitFor(function () {
+          return tableHas('First [Campaign]') && tableHas('NAVADMIN 2023 subject') && visibleRows().length === 2;
+        }, function () {
+          open('writefallbackoffline', '?type=NAVADMIN&year=2023&number=1', function () {
+            return tableHas('NAVADMIN 2023 subject') && yearComplete('2023') && modalShown() && modalText() === linkedBody;
+          }, function () {
+            assert(!app.Navadmin.messageStore.getBodyStatus(0, 2025, 1), 'An aborted write persisted a body across reload');
+            recordRequests('writefallbackoffline', function (requests) {
+              assert(!messageRequests(requests).length, 'Offline reopen attempted to fetch an IndexedDB body');
+              done();
+            });
+          });
+        });
+      });
+    });
+  }]);
+
+  steps.push(['Keep reading and searching in memory when browser storage is disabled', function (done) {
+    var subject = 'NAVADMIN 2023 subject';
+    open('nostorage', '?type=NAVADMIN&year=2023', function () {
+      return tableHas(subject) && warningProgress('2023', '1/1');
+    }, function () {
+      select('#msg-search-scope-full-message').trigger('click');
+      searchFor('<tag>');
+      waitFor(function () { return visibleRows().find('a').text() === subject; }, function () {
+        clickRow(subject);
+        waitFor(function () { return modalShown() && modalText() === linkedBody; }, done);
       });
     });
   }]);
@@ -470,28 +1175,131 @@
     });
   }]);
 
-  steps.push(['Fit the Title dropdown and maximize the message field within the viewport', function (done) {
+  steps.push(['Anchor and wrap the filter menus and fit the message field within the viewport', function (done) {
+    var fillClass = 'message-filters-buttons-fill';
     frame.style.width = '320px';
-    open('reflow', '', function () { return tableHas('First [Campaign]') && app.jQuery.active === 0; }, function () {
+    open('reflow', '', function () {
+      return tableHas('First [Campaign]') && app.jQuery.active === 0 && select('.message-filters').hasClass(fillClass);
+    }, function () {
       var viewport = app.document.documentElement;
-      var titleButton = select('.input-group button.dropdown-toggle').filter(function () {
-        return app.jQuery(this).text() === 'Title';
-      })[0];
-      var menu = app.jQuery(titleButton).next('.dropdown-menu')[0];
+      var typeButton = select('#msg-type-dropdown')[0];
+      var yearButton = select('#msg-year-dropdown')[0];
+      var scopeButton = select('#msg-search-scope-dropdown')[0];
+      var filters = select('.message-filters')[0];
+      var filterButtons = select('.message-filter-buttons')[0];
+      var search = select('#msg-search-input')[0];
 
-      function checkTitleMenu() {
-        titleButton.click();
+      function naturalSearchLayout() {
+        var filled = filters.classList.contains(fillClass);
+        if (filled) filters.classList.remove(fillClass);
+        var buttonBounds = filterButtons.getBoundingClientRect();
+        var layout = {
+          inlineSpace: filters.getBoundingClientRect().right - buttonBounds.right,
+          wrapped: search.getBoundingClientRect().top >= buttonBounds.bottom - 1
+        };
+        if (filled) filters.classList.add(fillClass);
+        return layout;
+      }
+
+      function checkSearchWrap(expectedWrapped) {
+        var inlineSpace = naturalSearchLayout().inlineSpace;
+        var filterBounds = filters.getBoundingClientRect();
+        var buttonBounds = filterButtons.getBoundingClientRect();
+        var searchBounds = search.getBoundingClientRect();
+        var wrapped = searchBounds.top >= buttonBounds.bottom - 1;
+        var halfViewport = app.innerWidth / 2;
+        if (Math.abs(inlineSpace - halfViewport) > 2) {
+          assert(wrapped === (inlineSpace < halfViewport),
+            'Search used the wrong row with ' + inlineSpace + 'px remaining in a ' + app.innerWidth + 'px viewport');
+        }
+        if (expectedWrapped !== undefined) {
+          assert(wrapped === expectedWrapped, 'Unexpected search row at ' + app.innerWidth + 'px');
+        }
+        if (wrapped) {
+          var typeBounds = typeButton.getBoundingClientRect();
+          var yearBounds = yearButton.getBoundingClientRect();
+          var scopeBounds = scopeButton.getBoundingClientRect();
+          assert(Math.abs(typeBounds.top - yearBounds.top) <= 1 && Math.abs(typeBounds.top - scopeBounds.top) <= 1,
+            'The dropdown buttons did not fit together above the search field');
+          assert(Math.abs(typeBounds.left - filterBounds.left) <= 2 && Math.abs(typeBounds.right - yearBounds.left) <= 2 &&
+            Math.abs(yearBounds.right - scopeBounds.left) <= 2 && Math.abs(scopeBounds.right - filterBounds.right) <= 2,
+            'The dropdown buttons did not fill the row above the search field');
+          assert(Math.abs(searchBounds.left - filterBounds.left) <= 2 &&
+            Math.abs(searchBounds.right - filterBounds.right) <= 2, 'Wrapped search did not fill the filter row');
+        } else {
+          assert(searchBounds.right - searchBounds.left >= halfViewport - 2,
+            'Inline search occupied less than half the viewport');
+        }
+        assert(searchBounds.left >= -1 && searchBounds.right <= viewport.clientWidth + 1,
+          'Search extended outside the viewport');
+      }
+
+      function checkSearchWidths(next) {
+        var widths = [375, 640, 704, 768, 991, 992, 1120, 1280, 1600];
+        function checkNextWidth() {
+          if (!widths.length) return next();
+          var width = widths.shift();
+          frame.style.width = width + 'px';
+          waitFor(function () {
+            return app.innerWidth === width && filters.classList.contains(fillClass) === naturalSearchLayout().wrapped;
+          }, function () {
+            checkSearchWrap(width === 375 ? true : width === 1600 ? false : undefined);
+            checkNextWidth();
+          });
+        }
+        checkNextWidth();
+      }
+
+      function checkFilterMenu(button) {
+        var menu = app.jQuery(button).next('.dropdown-menu')[0];
+        button.click();
         var menuBounds = menu.getBoundingClientRect();
-        assert(menu.offsetWidth > titleButton.offsetWidth, 'The Title menu should be allowed to grow wider than its button');
-        assert(menuBounds.left >= 0 && menuBounds.right <= viewport.clientWidth + 1,
-          'The open Title menu extended outside the viewport');
+        var buttonBounds = button.getBoundingClientRect();
+        var expectedLeft = Math.max(0, Math.min(buttonBounds.left, viewport.clientWidth - menuBounds.width));
+        assert(Math.abs(menuBounds.top - buttonBounds.bottom) <= 4 && Math.abs(menuBounds.left - expectedLeft) <= 1,
+          'The filter menu did not open under its own button');
+        assert(menuBounds.left >= -1 && menuBounds.right <= viewport.clientWidth + 1,
+          'The open filter menu extended outside the viewport');
         assert(menu.scrollWidth <= menu.clientWidth + 1 && viewport.scrollWidth <= viewport.clientWidth + 1,
-          'Opening the Title menu introduced horizontal scrolling');
-        titleButton.click();
+          'Opening the filter menu introduced horizontal scrolling');
+        return menu;
+      }
+
+      function checkLongOption(button, option) {
+        checkFilterMenu(button);
+        var height = option.offsetHeight;
+        button.click();
+        var label = option.textContent;
+        option.textContent = label + ' ' + new Array(24).join('UnbrokenText');
+        var expandedMenu = checkFilterMenu(button);
+        assert(expandedMenu.offsetWidth > button.offsetWidth, 'A long option could not expand the menu beyond its button');
+        assert(option.offsetHeight > height && option.scrollWidth <= option.clientWidth + 1,
+          'The long filter option did not wrap inside its menu');
+        button.click();
+        option.textContent = label;
       }
 
       assert(app.innerWidth === 320, 'Expected a 320 CSS pixel viewport');
-      checkTitleMenu();
+      checkSearchWrap(true);
+      var scope = app.jQuery(scopeButton);
+      var scopeIcon = scope.find('.message-search-scope-icon')[0];
+      var scopeLabel = scope.find('.message-search-scope-label')[0];
+      var scopeOptions = select('#msg-search-scope-menu');
+      assert(scopeIcon && scopeLabel && select('.message-search-scope-icon').length === 1 &&
+        !scopeOptions.find('svg').length, 'The search icon should appear only on the scope toggle');
+      scopeOptions.find('.dropdown-item').each(function () {
+        var label = this.textContent;
+        app.jQuery(this).trigger('click');
+        assert(scope.find('.message-search-scope-icon')[0] === scopeIcon && scopeLabel.textContent === label &&
+          scopeButton.getAttribute('aria-label') === 'Search scope: ' + label,
+          'Changing search scope did not preserve the icon and update its label');
+        var iconBounds = scopeIcon.getBoundingClientRect();
+        assert(iconBounds.right > iconBounds.left && iconBounds.right <= scopeLabel.getBoundingClientRect().left + 1,
+          'The search icon was hidden or did not precede the scope label');
+        checkSearchWrap(true);
+      });
+      checkLongOption(yearButton, select('#msg-download-all-years')[0]);
+      checkLongOption(scopeButton, select('#msg-search-scope-full-message')[0]);
       clickRow('First [Campaign]');
       waitFor(function () { return modalShown() && modalText() === linkedBody; }, function () {
         var modal = select('#msg-body-modal')[0];
@@ -555,10 +1363,15 @@
             checkLayout();
             close.click();
             waitFor(function () { return !select(modal).is(':visible') && !messageRoute(1); }, function () {
-              checkTitleMenu();
-              frame.style.width = '100%';
-              frame.style.height = '560px';
-              done();
+              checkFilterMenu(yearButton);
+              yearButton.click();
+              checkFilterMenu(scopeButton);
+              scopeButton.click();
+              checkSearchWidths(function () {
+                frame.style.width = '100%';
+                frame.style.height = '560px';
+                done();
+              });
             });
           });
         });

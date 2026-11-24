@@ -7,6 +7,17 @@ const host = '127.0.0.1';
 const requests = [];
 const types = ['NAVADMIN', 'ALNAV', 'MARADMIN', 'ALMAR'];
 const linkedBody = 'Literal <tag> & source text\nSee NAVADMIN 002/25 and OPNAVINST 10126.5.';
+const searchBody = 'A literal [Needle]+ <img src=x onerror="window.fixtureMarkupRan=true"> & more.\nSecond line.';
+const sharedStorage = {
+  offline: 'main',
+  bulkresume: 'bulk',
+  bulkoffline: 'bulk',
+  quotaevictionoffline: 'quotaeviction',
+  quotaoffline: 'quota',
+  writefallbackseed: 'writefallback',
+  writefallbackoffline: 'writefallback'
+};
+const offlineCases = ['offline', 'bulkoffline', 'quotaevictionoffline', 'quotaoffline', 'writefallbackoffline'];
 
 function respond(response, status, contentType, content) {
   response.writeHead(status, {
@@ -20,10 +31,18 @@ function json(response, data) {
   respond(response, 200, 'application/json', JSON.stringify(data));
 }
 
-function skeletons(type, year) {
+function skeletons(type, year, caseName) {
   const titles = type === 'NAVADMIN' && year === 2025
     ? ['First [Campaign]', 'Second [Campaign]', 'Missing body', 'Slow missing body']
     : [type + ' ' + year + ' subject'];
+  if ((caseName === 'priority' || caseName === 'waitinganimation') && type === 'NAVADMIN' && year === 2025) {
+    // Keep old-year work queued even in IE11 while its connection pool serves the new year list.
+    titles.push('Third cached body', 'Fourth cached body', 'Queued body 7', 'Queued body 8',
+      'Queued body 9', 'Queued body 10', 'Fast body');
+  }
+  if (caseName === 'waitinganimation' && type === 'NAVADMIN' && year === 2024) {
+    titles.push('2024 queued body 2', '2024 queued body 3', '2024 queued body 4');
+  }
   return titles.map((title, index) => ({
     type: types.indexOf(type), year, number: index + 1, title,
     cancelled: index === 0,
@@ -45,36 +64,62 @@ const api = http.createServer((request, response) => {
   request.setEncoding('utf8');
   request.on('data', chunk => { input += chunk; });
   request.on('end', () => {
-    const form = Object.fromEntries(new URLSearchParams(input));
-    requests.push({ scenario, endpoint, form });
+    const fields = new URLSearchParams(input);
+    const form = Object.fromEntries(fields);
+    const requestedYears = fields.getAll('yearsMetadata').map(Number);
+    if (requestedYears.length > 1) form.yearsMetadata = fields.getAll('yearsMetadata');
+    const recorded = { scenario, endpoint, form };
+    requests.push(recorded);
 
     if (endpoint === 'messages') {
-      if (caseName === 'offline') {
+      if (offlineCases.includes(caseName)) {
         respond(response, 503, 'text/plain', 'Offline fixture');
         return;
       }
       const years = {};
-      const requestedYear = Number(form.yearsMetadata);
       const availableYears = caseName === 'empty' ? [2025, 2026, 2027] : [2022, 2023, 2024, 2025];
       for (const year of availableYears) {
         let msgSkeletons = null;
-        if (requestedYear === year) {
+        if (requestedYears.includes(year)) {
           if (caseName === 'empty' && year === 2026) {
             msgSkeletons = [];
           } else if (caseName !== 'empty' || year !== 2027) {
-            msgSkeletons = skeletons(form.type, year);
+            msgSkeletons = skeletons(form.type, year, caseName);
           }
         }
         years[year] = { msgSkeletons };
       }
-      const delay = requestedYear === 2022 || requestedYear === 2024 ? 400 : 25;
+      const delay = requestedYears.length === 1 && (requestedYears[0] === 2022 || requestedYears[0] === 2024) ? 400 : 25;
       setTimeout(() => json(response, { status: 0, error: '', years }), delay);
     } else if (endpoint === 'message') {
       const number = Number(form.number);
-      const missing = number === 3 || number === 4 || caseName === 'offline';
-      const delay = number === 4 ? 450 : number === 2 ? 90 : 20;
-      const message = number === 1 ? linkedBody : 'Body of message ' + number;
-      setTimeout(() => respond(response, missing ? 404 : 200, 'text/plain', missing ? '' : message), delay);
+      const bulk = caseName === 'bulk' || caseName === 'bulkresume';
+      const bulkSelectedYear = bulk && form.type === 'NAVADMIN' && form.year === '2025';
+      const attempt = requests.filter(row => row.scenario === scenario && row.endpoint === endpoint &&
+        row.form.type === form.type && row.form.year === form.year && row.form.number === form.number).length;
+      let status = number === 3 || number === 4 ? 404 : 200;
+      if (offlineCases.includes(caseName) || (bulkSelectedYear && number === 4 && (caseName === 'bulk' || attempt === 1))) {
+        status = 503;
+      } else if (bulkSelectedYear && number === 4) {
+        status = 200;
+      }
+      let delay = number === 4 ? 450 : number === 2 ? 90 : 20;
+      if (caseName === 'modal' && number === 3) delay = 350;
+      if (caseName === 'modal' && number === 4) delay = 1300;
+      if (caseName.indexOf('blank') === 0 && number === 2) delay = 350;
+      if (bulkSelectedYear) delay = number * 125;
+      if (caseName === 'priority' && form.year === '2025') {
+        delay = { 9: 1900, 11: 130 }[number] || (number >= 8 ? 900 : 250);
+      }
+      if (caseName === 'waitinganimation') delay = form.year === '2024' ? 1600 : number === 11 ? 130 : 750;
+      if (caseName === 'searchburst') delay = 600;
+      if (caseName === 'sessioncache') delay += 300;
+      let message = bulkSelectedYear && number === 2 ? searchBody : number === 1 ? linkedBody : 'Body of message ' + number;
+      if (caseName === 'searchburst') message += '\nAnother archive hit';
+      setTimeout(() => {
+        recorded.httpStatus = status;
+        respond(response, status, 'text/plain', status === 200 ? message : '');
+      }, delay);
     } else if (endpoint === 'updateUserInfo') {
       const attempts = requests.filter(row => row.scenario === scenario && row.endpoint === endpoint).length;
       const fail = caseName === 'activity' && attempts === 1;
@@ -91,6 +136,63 @@ const fileTypes = {
   '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
   '.json': 'application/json', '.ico': 'image/x-icon', '.png': 'image/png', '.svg': 'image/svg+xml'
 };
+
+function storageSettings(scenario) {
+  const separator = scenario.indexOf('_');
+  const caseName = scenario.slice(0, separator);
+  const storageCase = sharedStorage[caseName] || caseName;
+  const namespace = JSON.stringify(storageCase + scenario.slice(separator) + ':');
+  const denyStorage = caseName === 'nostorage';
+  const denyIndexedDB = denyStorage || caseName === 'sessioncache';
+  const denyCacheRead = caseName === 'cacheread';
+  const denyBodyWrites = caseName === 'writefallback';
+  const fillStorage = caseName === 'quota';
+  return [
+    '(function() {',
+    '  var namespace = ' + namespace + ';',
+    '  var database = window.indexedDB || window.msIndexedDB;',
+    '  if (database) {',
+    '    var originalOpen = database.open;',
+    '    database.open = function(name, version) {',
+    denyIndexedDB ? '      throw new Error("Test IndexedDB disabled");' : '',
+    '      return version === undefined ? originalOpen.call(this, namespace + name) :',
+    '        originalOpen.call(this, namespace + name, version);',
+    '    };',
+    '  }',
+    denyCacheRead || fillStorage ? [
+      '  var bodyWrites = 0;',
+      '  var originalTransaction = IDBDatabase.prototype.transaction;',
+      '  IDBDatabase.prototype.transaction = function(stores, mode) {',
+      denyCacheRead ? '    if (mode === "readonly" && stores.indexOf("statuses") !== -1) {' +
+        ' window.cacheReadAttempts = 1; throw new Error("Test IndexedDB cache read denied"); }' : '',
+      fillStorage ? '    if (mode === "readwrite" && stores.indexOf("bodies") !== -1 && ++bodyWrites > 2) {' +
+        ' var error = new Error("Test IndexedDB cache is full"); error.name = "QuotaExceededError"; throw error; }' : '',
+      '    return originalTransaction.apply(this, arguments);',
+      '  };'
+    ].join('\n') : '',
+    denyBodyWrites ? [
+      '  window.deniedDatabaseBodyWrites = 0;',
+      '  var originalPut = IDBObjectStore.prototype.put;',
+      '  IDBObjectStore.prototype.put = function() {',
+      '    var request = originalPut.apply(this, arguments);',
+      '    if (this.name === "bodies") {',
+      '      var transaction = this.transaction;',
+      '      request.onsuccess = function() {',
+      '        window.deniedDatabaseBodyWrites++;',
+      '        transaction.abort();',
+      '      };',
+      '    }',
+      '    return request;',
+      '  };'
+    ].join('\n') : '',
+    denyStorage ? [
+      '  ["getItem", "setItem", "removeItem"].forEach(function(method) {',
+      '    Storage.prototype[method] = function() { throw new Error("Test localStorage disabled"); };',
+      '  });'
+    ].join('\n') : '',
+    '}());'
+  ].join('\n');
+}
 
 const web = http.createServer((request, response) => {
   const url = new URL(request.url, 'http://' + host);
@@ -121,21 +223,31 @@ const web = http.createServer((request, response) => {
   const relative = scenario ? scenario[2] : url.pathname.slice(1);
   if (scenario && relative === '') {
     const endpoint = 'http://' + host + ':' + api.address().port + '/' + scenario[1];
-    const denyCacheRead = scenario[1].startsWith('cacheread_') ? [
-      'window.cacheReadAttempts = 0;',
-      'var originalGetItem = Storage.prototype.getItem;',
-      'Storage.prototype.getItem = function(key) {',
-      '  if (key === "nv-cachedMessages") {',
-      '    window.cacheReadAttempts++;',
-      '    throw new Error("Test cache read denied");',
-      '  }',
-      '  return originalGetItem.call(this, key);',
+    const queueTrace = /^(priority|waitinganimation)_/.test(scenario[1]) ? [
+      'window.fixtureQueueStarts = [];',
+      'window.fixtureQueuePeak = 0;',
+      'var fixtureGetMsgBody = getMsgBody;',
+      'getMsgBody = function(type, year, number, onDone, background) {',
+      '  var trace = {',
+      '    key: year + "/" + number,',
+      '    selectedYear: document.getElementById("msg-year-dropdown").textContent,',
+      '    selectedListReady: !!Navadmin.messageStore.messages(type, 2024)',
+      '  };',
+      '  window.fixtureQueueStarts.push(trace);',
+      '  var active = window.fixtureQueueStarts.filter(function(item) { return !item.settled; }).length;',
+      '  window.fixtureQueuePeak = Math.max(window.fixtureQueuePeak, active);',
+      '  return fixtureGetMsgBody(type, year, number, function() {',
+      '    trace.settled = true;',
+      '    if (onDone) onDone.apply(this, arguments);',
+      '  }, background);',
       '};'
     ].join('\n') : '';
-    const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';' + denyCacheRead + '</script>';
+    const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '</script>';
     const index = fs.readFileSync(path.join(project, 'index.html'), 'utf8')
       .replace(/<script src="https:\/\/www\.gstatic\.com\/[^"]+"><\/script>/g, '')
       .replace(/<script>\s*\/\/ Your web app's Firebase configuration[\s\S]*?<\/script>/, '')
+      .replace('<script src="js/message-store.js"></script>',
+        '<script>' + storageSettings(scenario[1]) + '</script><script src="js/message-store.js"></script>')
       .replace('<script src="js/custom.js"></script>', testSettings + '<script src="js/custom.js"></script>');
     respond(response, 200, 'text/html', index);
     return;

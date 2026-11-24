@@ -54,28 +54,33 @@
       </ul>
     </div>
 
-    <div class="input-group">
-      <div class="input-group-prepend">
-        <button class="btn btn-outline-primary dropdown-toggle" id="msg-type-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
-        <div class="dropdown-menu" id="msg-type-dropdown-menu">
-          <!-- <a class="dropdown-item" href="#">NAVADMIN</a> -->
+    <div class="message-filters">
+      <div class="input-group message-filter-buttons">
+        <div class="input-group-prepend dropdown">
+          <button class="btn btn-outline-primary dropdown-toggle" id="msg-type-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
+          <div class="dropdown-menu" id="msg-type-dropdown-menu">
+            <!-- <a class="dropdown-item" href="#">NAVADMIN</a> -->
+          </div>
+        </div>
+        <div class="input-group-prepend dropdown">
+          <button class="btn btn-outline-secondary dropdown-toggle" id="msg-year-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
+          <div class="dropdown-menu" id="msg-year-dropdown-menu">
+            <!-- <a class="dropdown-item" href="#">Latest year</a> -->
+          </div>
+        </div>
+        <div class="input-group-prepend dropdown">
+          <button class="btn btn-outline-secondary dropdown-toggle" id="msg-search-scope-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" aria-controls="msg-search-scope-menu" aria-label="Search scope: Full Message">
+            <!-- Bootstrap Icons Search. License in assets/bootstrap-icons.LICENSE.txt. -->
+            <svg class="message-search-scope-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
+            </svg><span class="message-search-scope-label">Full Message</span></button>
+          <div class="dropdown-menu" id="msg-search-scope-menu" role="menu" aria-labelledby="msg-search-scope-dropdown">
+            <button class="dropdown-item" id="msg-search-scope-title" type="button" role="menuitemradio" aria-checked="false" value="title">Title Only</button>
+            <button class="dropdown-item active" id="msg-search-scope-full-message" type="button" role="menuitemradio" aria-checked="true" value="full-message">Full Message</button>
+          </div>
         </div>
       </div>
-      <div class="input-group-prepend">
-        <button class="btn btn-outline-secondary dropdown-toggle" id="msg-year-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
-        <div class="dropdown-menu" id="msg-year-dropdown-menu">
-          <!-- <a class="dropdown-item" href="#">Latest year</a> -->
-        </div>
-      </div>
-      <div class="input-group-prepend">
-        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Title</button>
-        <div class="dropdown-menu" id="msg-search-scope-menu">
-          <a class="dropdown-item" href="#">Title</a>
-          <a class="dropdown-item disabled" href="#">Full Message (currently on iOS and Android apps)</a>
-          <!-- <a class="dropdown-item" href="#">title only</a> -->
-        </div>
-      </div>
-      <input type="text" class="form-control" id="msg-search-input" aria-label="Search text input">
+      <input type="text" class="form-control" id="msg-search-input" placeholder="Search downloaded messages" aria-label="Search messages">
     </div>
   </nav>
   <div class="container-fluid" id="main-container">
@@ -163,9 +168,10 @@
   <script src="js/types.js"></script>
   <script src="js/navigation.js"></script>
   <script src="js/utilities.js"></script>
-  <script src="js/serialization.js"></script>
   <script src="js/message-store.js"></script>
   <script src="js/fetch.js"></script>
+  <script src="js/message-downloads.js"></script>
+  <script src="js/message-search.js"></script>
   <script src="js/custom.js"></script>
 
   <!-- The core Firebase JS SDK is always required and must be listed first -->

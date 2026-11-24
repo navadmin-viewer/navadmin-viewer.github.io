@@ -2,6 +2,8 @@ var server = 'https://navadmin-server.runs.io';
 
 // Only successful metadata and broadcast requests have a cooldown.
 var serverRequestCooldownSeconds = 600;
+var backgroundRequestTimeout = 15000;
+var unavailableBodyRetryMs = 60 * 60 * 1000;
 var requestThrottleByKey = new Map();
 var pendingCallbacksByRequestKey = new Map();
 
@@ -95,25 +97,18 @@ function messageBodyKey(msgType, msgYear, msgNumber) {
  * Refresh a message type's year list and requested message metadata in the cache.
  * @param {MsgType} msgType The message type to fetch.
  * @param {number[]} yearsToGetMetadata The years whose message metadata should be included. Pass an empty array for the year list alone.
- * @param {boolean} getLatestYearMetadata Whether to start a follow-up metadata request for the latest year after success.
  * @param {function} [completionHandler] Receives an object with requestOutcome and errorText.
  *   The outcome is network after a successful response, cooldown when a recent success is reused,
  *   or error when the request fails. The error text is null on success.
+ * @param {boolean} [background] Apply the background timeout to a new request and skip the global loading indicator.
  */
-function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, completionHandler) {
+function getYearsForMsgType(msgType, yearsToGetMetadata, completionHandler, background) {
   var postData = 'type=' + msgTypeToString(msgType);
   (yearsToGetMetadata || []).forEach(function(year) {
     postData += '&yearsMetadata=' + year;
   });
 
   function complete(requestOutcome, errorText) {
-    if (requestOutcome !== 'error' && getLatestYearMetadata) {
-      var latestYear = Navadmin.messageStore.latestYear(msgType);
-      if (latestYear > -1) {
-        console.log('Requesting metadata for the latest ' + msgTypeToString(msgType) + ' year, ' + latestYear + '.');
-        getYearsForMsgType(msgType, [latestYear], false, null);
-      }
-    }
     if (completionHandler) {
       completionHandler({ requestOutcome: requestOutcome, errorText: errorText });
     }
@@ -133,7 +128,9 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
     url: server + '/messages',
     method: 'POST',
     data: postData,
-    dataType: 'json'
+    dataType: 'json',
+    global: !background,
+    timeout: background ? backgroundRequestTimeout : 0
   });
   request.done(function(data) {
     if (!data || data.status !== 0 || !data.years || typeof data.years !== 'object') {
@@ -146,6 +143,9 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
     console.log('Received ' + yearCount + ' year entries for ' + postData + '. ' +
       (metadataChangedByMerge ? 'Updated the cache.' : 'Cached message details match the response.'));
     releaseActiveMetadataRequest(postData, true);
+    if (metadataChangedByMerge && Navadmin.onMessageMetadataChanged) {
+      Navadmin.onMessageMetadataChanged(msgType);
+    }
     finishMessageRequest(postData, ['network', null]);
   });
   request.fail(function(jqXHR, textStatus) {
@@ -154,47 +154,71 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, getLatestYearMetadata, 
   });
 }
 
+// A 404 may be temporary. Keep it in the completion count and check it again on a later visit.
+function isCurrentBodyRecord(record) {
+  return record && (record.status === 200 ||
+    (record.status === 404 && Date.now() - record.savedAt < unavailableBodyRetryMs));
+}
+
 /**
  * Read a message body from the cache or fetch it independently of its list metadata.
+ * Callers share the cache lookup and any network request for the same message.
  * @param {MsgType} msgType The message type.
  * @param {number} msgYear The message year.
  * @param {number} msgNumber The message number.
- * @param {function} [completionHandler] Receives (body, errorText). The body is null on failure and the error text is null on success.
+ * @param {function} [completionHandler] Receives (body, errorText, result).
+ *   The body is null on failure and the error text is null on success.
+ *   The result contains the HTTP status, or 0 for an empty body or missing HTTP response.
+ * @param {boolean} [background] Apply the background timeout to a new request and skip the global loading indicator.
  */
-function getMsgBody(msgType, msgYear, msgNumber, completionHandler) {
+function getMsgBody(msgType, msgYear, msgNumber, completionHandler, background) {
   var postData = messageBodyKey(msgType, msgYear, msgNumber);
-  var body = Navadmin.messageStore.getBody(msgType, msgYear, msgNumber);
-  if (body) {
-    console.log('Using the cached body for ' + postData + '.');
-    if (completionHandler) {
-      completionHandler(body, null);
-    }
-    return;
-  }
+  var unavailable = 'Message text is not publicly released.';
   if (!startMessageRequest(postData, completionHandler)) {
     return;
   }
-  var request = $.ajax({
-    url: server + '/message',
-    method: 'POST',
-    data: postData,
-    dataType: 'text'
-  });
-  request.done(function(data) {
-    if (!data) {
-      console.log('The server returned an empty body for ' + postData + '.');
-      finishMessageRequest(postData, [null, 'Message not found.']);
+
+  function finish(body, status, errorText) {
+    finishMessageRequest(postData, [body, errorText, { status: status }]);
+  }
+
+  function finishWithRecord(record) {
+    finish(record.body, record.status, record.status === 404 ? unavailable : null);
+  }
+
+  function saveResult(body, status) {
+    Navadmin.messageStore.saveBodyResult(msgType, msgYear, msgNumber, body, status, function(record) {
+      Navadmin.messageDownloads.recordAvailable(record);
+      finishWithRecord(record);
+    });
+  }
+
+  Navadmin.messageStore.getBodyRecord(msgType, msgYear, msgNumber, function(record) {
+    if (isCurrentBodyRecord(record) || (record && window.navigator.onLine === false)) {
+      finishWithRecord(record);
       return;
     }
-    Navadmin.messageStore.saveBody(msgType, msgYear, msgNumber, data);
-    finishMessageRequest(postData, [data, null]);
-  });
-  request.fail(function(jqXHR, textStatus) {
-    console.log('Message request failed for ' + postData + ' with status ' + textStatus + ' and HTTP status ' + jqXHR.status + '.');
-    var errorText = jqXHR.status === 404 ?
-      'Message text is not publicly released.' :
-      'Unable to get the message.';
-    finishMessageRequest(postData, [null, errorText]);
+
+    $.ajax({
+      url: server + '/message',
+      method: 'POST',
+      data: postData,
+      dataType: 'text',
+      global: !background,
+      timeout: background ? backgroundRequestTimeout : 0
+    }).done(function(data) {
+      if (Navadmin.messageStore.hasBodyText(data)) {
+        saveResult(data, 200);
+      } else {
+        finish(null, 0, 'Message not found.');
+      }
+    }).fail(function(jqXHR) {
+      if (jqXHR.status === 404) {
+        saveResult(null, 404);
+      } else {
+        finish(null, jqXHR.status, 'Unable to get the message.');
+      }
+    });
   });
 }
 

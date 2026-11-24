@@ -2,9 +2,9 @@
 
 To run tests
 
-1. Start test server in shell
+1. Start test server in shell. Powershell example below:
 
-   ```
+   ```powershell
    $env:VIEWER_TEST_PORT = '8765'
    node .\tests\browser-server.cjs
    ```

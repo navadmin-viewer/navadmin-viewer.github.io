@@ -1,4 +1,4 @@
-[![NAVADMIN Viewer icon](tree/master/assets/Icon128.png)](https://apps.apple.com/us/app/navadmin-viewer/id1345135985)
+[![NAVADMIN Viewer icon](https://raw.githubusercontent.com/navadmin-viewer/navadmin-viewer.github.io/refs/heads/master/assets/Icon128.png)](https://apps.apple.com/us/app/navadmin-viewer/id1345135985)
 
 ## NAVADMIN Viewer web app
 

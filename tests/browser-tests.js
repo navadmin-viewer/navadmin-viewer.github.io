@@ -114,7 +114,20 @@
   }
 
   function visibleRows() {
-    return select('#msg-list-table-body tr:visible');
+    return select('#msg-list-table-body tr:visible').not('#message-search-loading-row');
+  }
+
+  function searchLoadingRow() {
+    return select('#msg-list-table-body tr[id="message-search-loading-row"]');
+  }
+
+  function assertSearchLoading() {
+    var row = searchLoadingRow();
+    assert(row.length === 1 && row[0] === row.parent()[0].firstElementChild && row.is(':visible'),
+      'Expected one visible search loading row at the top of the table');
+    assert(row[0].cells.length === 3 && row.find('.spinner-border').length === 1 &&
+      app.jQuery(row[0].cells[1]).find('.spinner-border[role="status"]').length === 1,
+      'Expected one search spinner in the Title column');
   }
 
   function searchFor(query) {
@@ -286,14 +299,25 @@
   steps.push(['Search titles literally and clear the filter', function (done) {
     select('#msg-search-scope-title').trigger('click');
     var search = select('#msg-search-input');
+    var existingRow = messageLink('First [Campaign]').closest('tr')[0];
     search.val('[campaign]').trigger('paste');
-    waitFor(function () { return select('#msg-list-table-body tr:visible').length === 2; }, function () {
-      search.val('').trigger('input').trigger('keyup');
-      assert(select('#msg-list-table-body tr:visible').length === 4, 'Clearing search did not restore all rows');
-      search.val('[').trigger('input').trigger('keyup');
-      waitFor(function () { return visibleRows().length === 2; }, function () {
+    waitFor(function () { return searchLoadingRow().length; }, function () {
+      assertSearchLoading();
+      assert(visibleRows().length === 4 && messageLink('First [Campaign]').closest('tr')[0] === existingRow,
+        'Showing the search spinner replaced the existing message rows');
+      waitFor(function () { return !searchLoadingRow().length && visibleRows().length === 2; }, function () {
+        search.val('').trigger('input').trigger('keyup');
+        assert(visibleRows().length === 4, 'Clearing search did not restore all rows');
+        search.val('[').trigger('input').trigger('keyup');
+        assertSearchLoading();
         searchFor('');
-        done();
+        assert(!searchLoadingRow().length && visibleRows().length === 4,
+          'Clearing a pending search did not immediately restore the complete list');
+        searchFor('[');
+        waitFor(function () { return !searchLoadingRow().length && visibleRows().length === 2; }, function () {
+          searchFor('');
+          done();
+        });
       });
     });
   }]);
@@ -710,6 +734,47 @@
     });
   }]);
 
+  steps.push(['Search restored text silently during startup and background updates', function (done) {
+    var scenario = 'restoredsearch';
+    var cachedSubject = 'Cached 2024 subject';
+    var refreshedSubject = 'NAVADMIN 2024 subject';
+    var years = [
+      { year: 2025, messages: firstCacheMessages() },
+      { year: 2024, messages: [{ type: 0, year: 2024, number: 1, title: cachedSubject, Body: linkedBody }] }
+    ];
+    function assertSilentSearch(message) {
+      assert(!app.fixtureSearchSpinnerInsertions && !searchLoadingRow().length, message);
+    }
+    seedMessageDatabase(scenario, 2, years, function () {
+      open(scenario, '?type=NAVADMIN&year=2025', function () {
+        var search = app.activeSearch;
+        return app.fixtureFinishCacheRead && search && !search.timer && !search.running;
+      }, function () {
+        assertSilentSearch('Restored text showed a search spinner while reading the cache');
+        var writes = app.fixtureHeldBodyWrites;
+        app.fixtureFinishCacheRead();
+        waitFor(function () {
+          return tableHas(cachedSubject) && visibleRows().find('mark').length === 2 && writes[2] && writes[3];
+        }, function () {
+          assertSilentSearch('Finishing the restored search showed a spinner');
+          app.getYearsForMsgType(0, [2024], null, true);
+          waitFor(function () { return tableHas(refreshedSubject) && !tableHas(cachedSubject); }, function () {
+            assertSilentSearch('Refreshing metadata showed a search spinner');
+            writes[2]();
+            waitFor(function () { return visibleRows().find('mark').length === 3 && tableHas('Second [Campaign]'); }, function () {
+              assertSilentSearch('The first background body showed a search spinner');
+              writes[3]();
+              waitFor(function () { return visibleRows().find('mark').length === 4 && tableHas('Missing body'); }, function () {
+                assertSilentSearch('The second background body showed a search spinner');
+                done();
+              });
+            });
+          });
+        });
+      });
+    });
+  }]);
+
   steps.push(['Continue Full Message search with memory and other years after a read fails', function (done) {
     var scenario = 'searchreadfailure';
     var readableSubject = 'NAVADMIN 2023 subject';
@@ -745,16 +810,30 @@
         var store = app.Navadmin.messageStore;
         store.saveBodyResult(0, 2025, 2, linkedBody, 200, function () {
           prototype.put = put;
+          var listBodyRecords = store.listBodyRecords;
+          var finishRead;
+          store.listBodyRecords = function (type, year, callback) {
+            listBodyRecords.call(store, type, year, function (records) {
+              finishRead = function () { callback(records); };
+            });
+          };
           searchFor('source text');
           waitFor(function () {
-            return visibleRows().find('mark').length >= 2;
+            return finishRead && !app.activeSearch.timer && !app.activeSearch.running;
           }, function () {
-            assert(failedReads === 1, 'Search attempted to read the failed year again');
-            assert(!store.getBodyStatus(0, 2025, 2).persistent, 'The fixture body was saved to IndexedDB');
-            assert(tableHas(memorySubject) && tableHas(readableSubject) && !tableHas(unreadableSubject),
-              'Search missed available matches after the interrupted read');
-            prototype.openCursor = openCursor;
-            done();
+            assertSearchLoading();
+            store.listBodyRecords = listBodyRecords;
+            finishRead();
+            waitFor(function () {
+              return !searchLoadingRow().length && visibleRows().find('mark').length >= 2;
+            }, function () {
+              assert(failedReads === 1, 'Search attempted to read the failed year again');
+              assert(!store.getBodyStatus(0, 2025, 2).persistent, 'The fixture body was saved to IndexedDB');
+              assert(tableHas(memorySubject) && tableHas(readableSubject) && !tableHas(unreadableSubject),
+                'Search missed available matches after the interrupted read');
+              prototype.openCursor = openCursor;
+              done();
+            });
           });
         });
       });
@@ -784,6 +863,7 @@
           if (message.year === 2025 && message.snippet && ++created === 1) {
             setTimeout(function () {
               typedDuringSearch = table.querySelectorAll('mark').length < messagesPerYear;
+              assertSearchLoading();
               searchFor('final archive hit');
             }, 0);
           }
@@ -796,12 +876,14 @@
         assert(!created, 'Typing synchronously constructed search result rows');
         waitFor(function () {
           var mark = table.querySelector('mark');
-          return mark && mark.textContent === 'final archive hit' && table.rows.length === 1;
+          return !searchLoadingRow().length && mark && mark.textContent === 'final archive hit' && table.rows.length === 1;
         }, function () {
           assert(typedDuringSearch, 'The result builder did not yield before committing the large result set');
           assert(tableHas('Archive 2025/300'), 'The latest query lost a result outside the selected year');
           searchFor('archive hit');
-          waitFor(function () { return table.rows.length === 2 * messagesPerYear + 1 && yearComplete('2024'); }, function () {
+          waitFor(function () {
+            return !searchLoadingRow().length && table.rows.length === 2 * messagesPerYear + 1 && yearComplete('2024');
+          }, function () {
             assert(tableHas('Archive 2023/300') && tableHas('NAVADMIN 2024 subject'), 'Search missed cached or newly downloaded text');
             assert(select('#msg-year-dropdown').text() === '2024', 'Search changed the selected year');
             searchFor('');

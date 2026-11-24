@@ -103,6 +103,7 @@ const api = http.createServer((request, response) => {
       } else if (bulkSelectedYear && number === 4) {
         status = 200;
       }
+      if (caseName === 'restoredsearch' && number === 3) status = 200;
       let delay = number === 4 ? 450 : number === 2 ? 90 : 20;
       if (caseName === 'modal' && number === 3) delay = 350;
       if (caseName === 'modal' && number === 4) delay = 1300;
@@ -116,6 +117,7 @@ const api = http.createServer((request, response) => {
       if (caseName === 'sessioncache') delay += 300;
       let message = bulkSelectedYear && number === 2 ? searchBody : number === 1 ? linkedBody : 'Body of message ' + number;
       if (caseName === 'searchburst') message += '\nAnother archive hit';
+      if (caseName === 'restoredsearch') message = linkedBody;
       setTimeout(() => {
         recorded.httpStatus = status;
         respond(response, status, 'text/plain', status === 200 ? message : '');
@@ -242,7 +244,37 @@ const web = http.createServer((request, response) => {
       '  }, background);',
       '};'
     ].join('\n') : '';
-    const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '</script>';
+    const restoredSearch = /^restoredsearch_/.test(scenario[1]) ? [
+      'document.getElementById("msg-search-input").value = "source text";',
+      'window.fixtureSearchSpinnerInsertions = 0;',
+      'var fixtureSearchObserver = new MutationObserver(function(records) {',
+      '  records.forEach(function(record) {',
+      '    for (var i = 0; i < record.addedNodes.length; i++) {',
+      '      if (record.addedNodes[i].id === "message-search-loading-row") window.fixtureSearchSpinnerInsertions++;',
+      '    }',
+      '  });',
+      '});',
+      'fixtureSearchObserver.observe(document.getElementById("msg-list-table-body"), { childList: true });',
+      'window.fixtureHeldBodyWrites = {};',
+      'var fixtureStore = Navadmin.messageStore;',
+      'var fixtureListBodyRecords = fixtureStore.listBodyRecords;',
+      'var fixtureSaveBodyResult = fixtureStore.saveBodyResult;',
+      'fixtureStore.listBodyRecords = function(type, year, callback) {',
+      '  fixtureStore.listBodyRecords = fixtureListBodyRecords;',
+      '  fixtureListBodyRecords(type, year, function(records) {',
+      '    window.fixtureFinishCacheRead = function() { callback(records); };',
+      '  });',
+      '};',
+      'fixtureStore.saveBodyResult = function(type, year, number) {',
+      '  var args = arguments;',
+      '  if (year === 2025 && (number === 2 || number === 3)) {',
+      '    window.fixtureHeldBodyWrites[number] = function() { fixtureSaveBodyResult.apply(fixtureStore, args); };',
+      '  } else {',
+      '    fixtureSaveBodyResult.apply(fixtureStore, args);',
+      '  }',
+      '};'
+    ].join('\n') : '';
+    const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '\n' + restoredSearch + '</script>';
     const index = fs.readFileSync(path.join(project, 'index.html'), 'utf8')
       .replace(/<script src="https:\/\/www\.gstatic\.com\/[^"]+"><\/script>/g, '')
       .replace(/<script>\s*\/\/ Your web app's Firebase configuration[\s\S]*?<\/script>/, '')

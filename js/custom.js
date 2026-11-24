@@ -10,6 +10,7 @@ var listSelection;
 var archiveSearch;
 var activeSearch;
 var searchInput;
+var searchLoadingRow;
 var displayedSearchRows;
 var pendingYearStatus = new Map();
 var yearStatusTimer;
@@ -35,6 +36,12 @@ $(document).ready(function() {
 
   loadingProgress = $('#loading-progress');
   searchInput = document.getElementById('msg-search-input');
+  searchLoadingRow = $('<tr>', { id: 'message-search-loading-row' }).append(
+    $('<td>'),
+    $('<td>').append($('<span>', { 'class': 'spinner-border spinner-border-sm', role: 'status' })
+      .append($('<span>', { 'class': 'sr-only', text: 'Searching messages' }))),
+    $('<td>')
+  )[0];
   msgModal = $('#msg-body-modal');
   msgModalTitle = msgModal.find('.modal-title');
   msgModalBody = msgModal.find('.modal-body');
@@ -47,7 +54,7 @@ $(document).ready(function() {
   Navadmin.messageDownloads.init(messageDownloadChanged, messageYearEvicted, isOpenMessageYear);
   Navadmin.messageSearch.init(function() {
     queueMessageFilterLayout();
-    msgFilterSearchInputChanged();
+    msgFilterSearchInputChanged(true);
   });
   Navadmin.onMessageMetadataChanged = function(type) {
     if (activeSearch && activeSearch.type === type) refreshArchiveSearchSoon();
@@ -63,9 +70,9 @@ $(document).ready(function() {
   });
   $(window).on('resize', queueMessageFilterLayout);
   queueMessageFilterLayout();
-  $(searchInput).on('input keyup change', msgFilterSearchInputChanged);
+  $(searchInput).on('input keyup change', function() { msgFilterSearchInputChanged(true); });
   $(searchInput).on('paste cut', function() {
-    window.setTimeout(msgFilterSearchInputChanged, 0);
+    window.setTimeout(function() { msgFilterSearchInputChanged(true); }, 0);
   });
   $('#nav-app-link').click(navigateToAppStore);
   msgModal.find('.modal-share-link').click(shareUserSelectedMessageLink);
@@ -729,8 +736,18 @@ function loadArchiveSearchTitles(state) {
     if (archiveSearch === state) {
       missing.forEach(function(year) { queueYearDownloadStatus(state.type, year); });
       if (activeSearch && !activeSearch.fullMessage) loadArchiveSearchTitles(state);
+      hideSearchLoadingIndicatorWhenIdle();
     }
   }, true);
+}
+
+function hideSearchLoadingIndicatorWhenIdle() {
+  if (!searchLoadingRow.parentNode) return;
+  var search = activeSearch;
+  var readingArchive = search && archiveSearch &&
+    (search.fullMessage ? archiveSearch.readingBodies : archiveSearch.readingTitles);
+  if (search && (search.timer || search.running || readingArchive)) return;
+  searchLoadingRow.parentNode.removeChild(searchLoadingRow);
 }
 
 function refreshArchiveSearchSoon() {
@@ -847,6 +864,8 @@ function runArchiveSearch(search) {
     search.running = false;
     if (search.needsRefresh) {
       scheduleArchiveSearch(search, 220);
+    } else {
+      hideSearchLoadingIndicatorWhenIdle();
     }
   }
   scanBatch();
@@ -856,20 +875,21 @@ function showArchiveSearchRows(rows, rowIndex) {
   var table = document.getElementById('msg-list-table-body');
   var focusedMessage = findFocusedMessage(table);
   if (!displayedSearchRows || !rows.length) {
-    if (table.firstChild) $(table).empty();
+    $(table).children().not(searchLoadingRow).remove();
   } else {
     displayedSearchRows.forEach(function(entry, key) {
       if (rowIndex.get(key) !== entry) entry.row.remove();
     });
   }
 
-  var previousRow = table.firstChild;
+  var previousRow = table.firstElementChild;
+  if (previousRow === searchLoadingRow) previousRow = previousRow.nextElementSibling;
   var fragment = document.createDocumentFragment();
   rows.forEach(function(entry) {
     var row = entry.row[0];
     if (row === previousRow) {
       if (fragment.firstChild) table.insertBefore(fragment, previousRow);
-      previousRow = previousRow.nextSibling;
+      previousRow = previousRow.nextElementSibling;
     } else {
       var message = entry.message;
       if (!message.offline) {
@@ -892,8 +912,9 @@ function showArchiveSearchRows(rows, rowIndex) {
  * Filter the selected message type across years with a case-insensitive literal match.
  * Full Message searches cached bodies and Title Only searches subjects.
  * Clearing the query restores the selected year's list.
+ * @param {boolean} [userInitiated] Show a loading row for changes made through the search controls.
  */
-function msgFilterSearchInputChanged() {
+function msgFilterSearchInputChanged(userInitiated) {
   if (!listSelection) {
     return;
   }
@@ -910,6 +931,9 @@ function msgFilterSearchInputChanged() {
   }
   activeSearch = null;
   var matcher = Navadmin.messageSearch.matcher(query);
+  if (!userInitiated || !matcher) {
+    hideSearchLoadingIndicatorWhenIdle();
+  }
   if (!matcher) {
     if (archiveSearch) archiveSearch.requestedTitleYears.clear();
     if (previousSearch || displayedSearchRows) {
@@ -921,6 +945,10 @@ function msgFilterSearchInputChanged() {
     archiveSearch = { type: listSelection.type, bodies: new Map(), readBodyYears: new Set(), requestedTitleYears: new Set() };
   }
   activeSearch = { type: listSelection.type, query: query, fullMessage: fullMessage, matcher: matcher };
+  if (userInitiated && !searchLoadingRow.parentNode) {
+    var table = document.getElementById('msg-list-table-body');
+    table.insertBefore(searchLoadingRow, table.firstChild);
+  }
   scheduleArchiveSearch(activeSearch, 140);
 }
 

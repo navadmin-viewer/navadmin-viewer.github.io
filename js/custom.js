@@ -11,6 +11,9 @@ var listSelection;
 // Leave this undefined until the first render so the HTML placeholder gets cleared.
 var displayedRows;
 var selectedMessage;
+// A closing message keeps its return target until both the dialog and route settle.
+var messageToRestoreFocus;
+var messageModalPhase = 'hidden';
 
 var loadingProgress;
 var msgModal;
@@ -49,16 +52,28 @@ $(document).ready(function() {
   });
   $('#nav-app-link').click(navigateToAppStore);
   msgModal.find('.modal-share-link').click(shareUserSelectedMessageLink);
-  msgModal.on('hide.bs.modal', closeMessage);
-  // Bootstrap ignores show/hide requests while a modal is transitioning.
+  // Wait for Bootstrap to finish each transition before opening or closing again.
+  msgModal.on('show.bs.modal', function() {
+    messageModalPhase = 'showing';
+  });
   msgModal.on('shown.bs.modal', function() {
-    if (!selectedMessage) {
+    messageModalPhase = 'shown';
+    if (selectedMessage) {
+      focusMessageHeading();
+    } else {
       msgModal.modal('hide');
     }
   });
+  msgModal.on('hide.bs.modal', function() {
+    messageModalPhase = 'hiding';
+    closeMessage();
+  });
   msgModal.on('hidden.bs.modal', function() {
+    messageModalPhase = 'hidden';
     if (selectedMessage) {
       msgModal.modal('show');
+    } else {
+      restoreMessageFocus();
     }
   });
 
@@ -105,6 +120,9 @@ function addListFilterItem(menu, label, link, type, year) {
       return;
     }
     e.preventDefault();
+    if (document.activeElement === this) {
+      menu.prev('.dropdown-toggle')[0].focus();
+    }
     if (listSelection.type == type && listSelection.year == year) {
       console.log('The selected filter is already active. Refreshing the list.');
       loadMessageList(type, year);
@@ -133,13 +151,22 @@ function setFilterMsgTypeDropdown() {
  * @returns {number} The selected year, or -1 if no year is available.
  */
 function setFilterMsgYearDropdown(type, year) {
-  var menu = $('#msg-year-dropdown-menu').empty();
+  var menu = $('#msg-year-dropdown-menu');
+  var activeElement = document.activeElement;
+  var focusedYearLink = $.contains(menu[0], activeElement) ? activeElement.getAttribute('href') : null;
+  menu.empty();
   Navadmin.messageStore.years(type).forEach(function(availableYear) {
     addListFilterItem(menu, availableYear, Navadmin.navigation.shareLink(type, availableYear, -1, false), type, availableYear);
   });
 
   var displayedYear = year > 0 ? year : Navadmin.messageStore.latestYear(type);
-  $('#msg-year-dropdown').text(displayedYear > 0 ? displayedYear : 'N/A');
+  var button = $('#msg-year-dropdown').text(displayedYear > 0 ? displayedYear : 'N/A');
+  if (focusedYearLink) {
+    var replacement = menu.find('a:visible').filter(function() {
+      return this.getAttribute('href') === focusedYearLink;
+    })[0];
+    (replacement || button[0]).focus();
+  }
   return displayedYear;
 }
 
@@ -234,30 +261,77 @@ function refreshMessageTable(msgType, msgYear, showEmptyIfUnavailable) {
     return rows !== null;
   }
 
-  var table = $('#msg-list-table-body').empty();
+  var table = $('#msg-list-table-body');
+  var focusedMessage = findFocusedMessage(table[0]);
+  table.empty();
   displayedRows = null;
   if (rows === null) {
     console.log('No cached message list is available for ' + listName + '.');
-    return false;
-  }
-
-  if (rows.length === 0) {
+  } else if (rows.length === 0) {
     console.log('Showing the empty message list for ' + listName + '.');
     table.append('<tr><td></td><td>No messages available</td><td></td></tr>');
     displayedRows = [];
-    return true;
+  } else {
+    console.log('Rendering the cached message list for ' + listName + ' because its row values changed.');
+    var fragment = document.createDocumentFragment();
+    displayedRows = rows.map(function(message) {
+      var row = createMessageRow(message);
+      fragment.appendChild(row[0]);
+      return { message: message, row: row };
+    });
+    table.append(fragment);
+    msgFilterSearchInputChanged();
   }
 
-  console.log('Rendering the cached message list for ' + listName + ' because its row values changed.');
-  var fragment = document.createDocumentFragment();
-  displayedRows = rows.map(function(message) {
-    var row = createMessageRow(message);
-    fragment.appendChild(row[0]);
-    return { message: message, row: row };
-  });
-  table.append(fragment);
-  msgFilterSearchInputChanged();
-  return true;
+  if (focusedMessage && !focusMessageLink(focusedMessage)) {
+    document.getElementById('msg-search-input').focus();
+  }
+  return rows !== null;
+}
+
+/**
+ * Identify the rendered message link that would lose focus during a table redraw.
+ * @param {HTMLElement} table The message table body.
+ * @returns {Object|null} The message represented by the focused row.
+ */
+function findFocusedMessage(table) {
+  var activeElement = document.activeElement;
+  if (messageModalPhase !== 'hidden' || !displayedRows || !$.contains(table, activeElement)) {
+    return null;
+  }
+
+  for (var i = 0; i < displayedRows.length; i++) {
+    var entry = displayedRows[i];
+    if ($.contains(entry.row[0], activeElement)) {
+      return entry.message;
+    }
+  }
+  return null;
+}
+
+/**
+ * Restore focus to the current visible subject link for a message.
+ * @param {Object|null} message The message type, year, and number to locate.
+ * @returns {boolean} Whether its subject link received focus.
+ */
+function focusMessageLink(message) {
+  if (!message || !displayedRows) {
+    return false;
+  }
+
+  for (var i = 0; i < displayedRows.length; i++) {
+    var entry = displayedRows[i];
+    if (entry.message.type == message.type && entry.message.year == message.year &&
+        entry.message.number == message.number) {
+      var link = entry.row.find('a:visible')[0];
+      if (link) {
+        link.focus();
+        return document.activeElement === link;
+      }
+      break;
+    }
+  }
+  return false;
 }
 
 /**
@@ -367,22 +441,26 @@ function restoreHistoryRoute() {
   var routeName = shortNameForMessage(route.type, route.year, route.number).trim();
   console.log('Restoring ' + routeName + ' from the current URL.');
 
-  if (!hasMessage) {
+  if (!hasMessage && selectedMessage) {
+    messageToRestoreFocus = selectedMessage;
     selectedMessage = null;
-    msgModal.modal('hide');
   }
   if (!listSelection || listSelection.type != list.type || listSelection.year != list.year) {
     loadMessageList(list.type, list.year);
   }
   if (hasMessage) {
-    showMessage(route.type, route.year, route.number, entry.depth);
+    showMessage(route.type, route.year, route.number, entry.depth, null, entry.opener);
   } else {
+    if (messageModalPhase === 'shown') {
+      msgModal.modal('hide');
+    }
     setListTitle();
+    restoreMessageFocus();
   }
 }
 
 /**
- * Open a message from the table or a reference and add its browser history entry.
+ * Open a message from the table and add its browser history entry.
  * @param {MsgType} type The message type to open.
  * @param {number} year The message year.
  * @param {number} number The message number.
@@ -394,8 +472,12 @@ function prepareAndShowMessageModal(type, year, number, row) {
     console.log('The requested message is already selected.');
     return;
   }
-  var depth = Navadmin.navigation.pushMessage(type, year, number, listSelection, selectedMessage);
-  showMessage(type, year, number, depth, row);
+  var opener = selectedMessage ? selectedMessage.opener : null;
+  if (!selectedMessage && row) {
+    opener = { type: type, year: year, number: number };
+  }
+  var depth = Navadmin.navigation.pushMessage(type, year, number, listSelection, selectedMessage, opener);
+  showMessage(type, year, number, depth, row, opener);
 }
 
 /**
@@ -406,18 +488,26 @@ function prepareAndShowMessageModal(type, year, number, row) {
  * @param {number} depth The number of browser history entries to go back when
  *   closing the modal. Use 0 when there is no originating list entry.
  * @param {jQuery|null} [row] The table row whose cursor shows download progress.
+ * @param {Object|null} [opener] The original subject link’s type, year, and number.
  */
-function showMessage(type, year, number, depth, row) {
-  var message = { type: type, year: year, number: number, depth: depth };
+function showMessage(type, year, number, depth, row, opener) {
+  var message = { type: type, year: year, number: number, depth: depth, opener: opener };
   selectedMessage = message;
+  messageToRestoreFocus = null;
 
   var messageName = setMessageTitle(message);
+  if (messageModalPhase === 'shown') {
+    // Move focus before replacing the message field in an already open dialog.
+    focusMessageHeading();
+  }
   var spinner = $('<span>', {
     'class': 'spinner-border spinner-border-sm mr-2',
     'aria-hidden': 'true'
   });
   msgModalBody.empty().append(spinner, document.createTextNode('Retrieving message\u2026'));
-  msgModal.modal('show');
+  if (messageModalPhase === 'hidden') {
+    msgModal.modal('show');
+  }
   if (row) {
     row.css('cursor', 'progress');
   }
@@ -456,7 +546,14 @@ function showMessage(type, year, number, depth, row) {
       msgModalBody.text(messageError);
       return;
     }
-    msgModalBody.empty().append(linkDocumentAndMessageReferences(body, messageName, prepareAndShowMessageModal));
+    var messageText = $('<textarea>', {
+      'class': 'form-control message-text',
+      'aria-label': 'Message text',
+      'readonly': true,
+      'rows': 12,
+      'wrap': 'soft'
+    }).val(body);
+    msgModalBody.empty().append(messageText);
 
     if (typeof analytics !== 'undefined') {
       analytics.logEvent('ViewedMessage', { messageNumber: messageName });
@@ -466,9 +563,38 @@ function showMessage(type, year, number, depth, row) {
 }
 
 /**
+ * Start reading a newly opened or selected message at its heading.
+ */
+function focusMessageHeading() {
+  msgModal.scrollTop(0);
+  msgModalTitle[0].focus();
+}
+
+/**
+ * Return focus to the opener after both the modal and list route settle.
+ * Direct links and missing rows use the year filter as the return point.
+ */
+function restoreMessageFocus() {
+  if (!messageToRestoreFocus || messageModalPhase !== 'hidden') {
+    return;
+  }
+
+  var route = Navadmin.navigation.readRoute(window.location.href);
+  if (route.number > 0 || listSelection.type !== route.type || listSelection.year !== route.year) {
+    return;
+  }
+
+  var opener = messageToRestoreFocus.opener;
+  messageToRestoreFocus = null;
+  if (!focusMessageLink(opener)) {
+    document.getElementById('msg-year-dropdown').focus();
+  }
+}
+
+/**
  * Update the modal title and page description using the cached subject.
  * @param {Object} message The current message selection.
- * @returns {string} The short message name used for reference matching.
+ * @returns {string} The short message name used for logging and analytics.
  */
 function setMessageTitle(message) {
   var name = shortNameForMessage(message.type, message.year, message.number);
@@ -491,6 +617,7 @@ function closeMessage() {
     return;
   }
   var depth = selectedMessage.depth;
+  messageToRestoreFocus = selectedMessage;
   selectedMessage = null;
   setListTitle();
   Navadmin.navigation.closeMessage(listSelection, depth);

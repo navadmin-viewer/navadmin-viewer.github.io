@@ -33,8 +33,57 @@ footer {
   padding-right: 15pt;
 }
 
+#msg-search-scope-menu {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#msg-search-scope-menu .dropdown-item {
+  white-space: normal;
+}
+
+#msg-body-modal .modal-dialog {
+  height: calc(100% - 1rem);
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+#msg-body-modal .modal-content {
+  height: 100%;
+  min-height: 14rem; /* Keep the message field usable on very short screens. */
+}
+
+#msg-body-modal .modal-header,
+#msg-body-modal .modal-footer {
+  flex-shrink: 0;
+}
+
 #msg-body-modal .modal-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  word-wrap: break-word;
+}
+
+#msg-body-modal .message-text {
+  height: 100%;
+  background-color: #fff;
+  resize: none;
   white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+#msg-body-modal .modal-title {
+  flex: 1 1 0%; /* Give long headings a finite width in IE11. */
+  min-width: 0;
+  max-height: 25vh;
+  overflow-y: auto;
+  word-wrap: break-word;
+}
+
+@media (max-width: 240px) {
+  #msg-body-modal .modal-content {
+    min-height: 20rem; /* Leave space for the footer buttons to wrap. */
+  }
 }
 
 @media (min-width: 992px) {

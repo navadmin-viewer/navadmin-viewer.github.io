@@ -68,20 +68,37 @@
     return app.jQuery(selector);
   }
 
-  function clickMenu(id, label) {
+  function menuItem(id, label) {
     var item = select('#' + id + '-dropdown-menu a').filter(function () {
       return app.jQuery(this).text() === label;
     });
     assert(item.length === 1, 'Expected one menu item for ' + label);
-    item.trigger('click');
+    return item;
   }
 
-  function clickRow(title) {
+  function clickMenu(id, label) {
+    menuItem(id, label).trigger('click');
+  }
+
+  function messageLink(title) {
     var link = select('#msg-list-table-body a').filter(function () {
       return app.jQuery(this).text() === title;
     });
     assert(link.length === 1, 'Expected one message titled ' + title);
-    link.trigger('click');
+    return link;
+  }
+
+  function clickRow(title) {
+    messageLink(title).trigger('click');
+  }
+
+  function isFocused(element) {
+    return app.document.activeElement === element;
+  }
+
+  function focus(element) {
+    element.focus();
+    assert(isFocused(element), 'Could not focus the test control');
   }
 
   function tableHas(title) {
@@ -95,7 +112,9 @@
   }
 
   function modalText() {
-    return select('#msg-body-modal .modal-body').text();
+    var body = select('#msg-body-modal .modal-body');
+    var field = body.find('textarea');
+    return field.length ? field.val() : body.text();
   }
 
   function closeModal() {
@@ -188,45 +207,57 @@
     });
   }]);
 
-  steps.push(['Render literal message text, references and nested message history', function (done) {
-    clickRow('First [Campaign]');
+  steps.push(['Show a selectable read-only message and preserve modal focus and history', function (done) {
+    var opener = messageLink('First [Campaign]')[0];
+    focus(opener);
+    opener.click();
     waitFor(function () { return modalShown() && modalText() === linkedBody; }, function () {
       var body = select('#msg-body-modal .modal-body');
+      var heading = select('#msg-body-modal .modal-title')[0];
+      assert(isFocused(heading), 'Opening a message did not focus its heading');
       assert(body.find('.spinner-border').length === 0, 'The spinner stayed after the message loaded');
-      assert(body.find('tag').length === 0, 'Literal markup became a DOM element');
-      assert(body.find('a').length === 2, 'Expected a message link and a document link');
-      assert(body.find('a').eq(1).attr('href').indexOf('https://www.google.com/') === 0, 'Document search link was lost');
-      body.find('a').first()[0].click();
-      waitFor(function () { return modalText() === 'Body of message 2' && messageRoute(2); }, function () {
-        var shared = '';
-        app.prompt = function (label, link) { shared = link; };
-        select('#msg-body-modal .modal-share-link').trigger('click');
-        assert(/\/view-message\/\?type=NAVADMIN&year=2025&number=2$/.test(shared), 'Share URL did not match the visible message');
-        app.history.back();
-        waitFor(function () { return modalText() === linkedBody && messageRoute(1); }, function () {
-          app.history.forward();
-          waitFor(function () { return modalText() === 'Body of message 2' && messageRoute(2); }, function () {
-            closeModal();
-            waitFor(function () { return !modalShown() && !messageRoute(1) && !messageRoute(2); }, done);
-          });
+      var fields = body.find('textarea');
+      assert(fields.length === 1 && body.children().length === 1, 'Expected one field for the message body');
+      assert(fields.val() === linkedBody, 'Literal markup, line breaks, or reference text changed');
+      var field = fields[0];
+      assert(field.readOnly && !field.disabled, 'The message field should be selectable and read-only');
+      assert(fields.attr('aria-label') === 'Message text' && field.tabIndex === 0, 'The message field should be named and in the tab order');
+      focus(field);
+      field.select();
+      assert(field.selectionStart === 0 && field.selectionEnd === field.value.length, 'The field did not select the full message');
+
+      var shared = '';
+      app.prompt = function (label, link) { shared = link; };
+      select('#msg-body-modal .modal-share-link').trigger('click');
+      assert(/\/view-message\/\?type=NAVADMIN&year=2025&number=1$/.test(shared), 'Share URL did not match the visible message');
+      app.jQuery(field).trigger(app.jQuery.Event('keydown', { which: 27, keyCode: 27 }));
+      waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, function () {
+        app.history.forward();
+        waitFor(function () { return modalShown() && messageRoute(1) && modalText() === linkedBody && isFocused(heading); }, function () {
+          app.history.back();
+          waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, done);
         });
       });
     });
   }]);
 
   steps.push(['Show a missing-body error without marking the row as offline', function (done) {
-    clickRow('Missing body');
+    var opener = messageLink('Missing body')[0];
+    focus(opener);
+    opener.click();
     var body = select('#msg-body-modal .modal-body');
     assert(app.jQuery(body[0].firstChild).hasClass('spinner-border'), 'The spinner should precede the loading text');
     assert(body.text() === 'Retrieving message\u2026', 'The modal should show its loading text');
+    assert(body.find('textarea').length === 0, 'The loading text should remain outside the message field');
     waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
       assert(body.find('.spinner-border').length === 0, 'The spinner stayed after the request failed');
+      assert(body.find('textarea').length === 0, 'The error should remain outside the message field');
       var missing = select('#msg-list-table-body tr').filter(function () {
         return app.jQuery(this).find('a').text() === 'Missing body';
       });
       assert(!missing.find('th').hasClass('offline-enabled'), 'A failed response was marked available offline');
       closeModal();
-      waitFor(function () { return !modalShown() && !messageRoute(3); }, done);
+      waitFor(function () { return !modalShown() && !messageRoute(3) && isFocused(missing.find('a')[0]); }, done);
     });
   }]);
 
@@ -247,7 +278,9 @@
       return modalShown() && messageRoute(9) && modalText() === 'Body of message 9';
     }, function () {
       closeModal();
-      waitFor(function () { return !modalShown() && !messageRoute(9) && tableHas('First [Campaign]'); }, done);
+      waitFor(function () {
+        return !modalShown() && !messageRoute(9) && tableHas('First [Campaign]') && isFocused(select('#msg-year-dropdown')[0]);
+      }, done);
     });
   }]);
 
@@ -325,6 +358,7 @@
 
           // Change the same store object after the initial render and before the refresh settles.
           var renderedRow = select('#msg-list-table-body tr').last()[0];
+          focus(app.jQuery(renderedRow).find('a')[0]);
           if (editCachedMessage) {
             var message = app.Navadmin.messageStore.findMessage(0, 2025, 1);
             message.title = editedTitle;
@@ -337,6 +371,7 @@
             assert(currentRow.find('a').text() === editedTitle, 'The table did not apply the edited cached title');
             assert(currentRow.text().indexOf('73') !== -1, 'The table did not apply the edited cached count');
             assert((currentRow[0] !== renderedRow) === editCachedMessage, 'The table replaced rows unexpectedly or skipped a redraw');
+            assert(isFocused(currentRow.find('a')[0]), 'A table refresh lost the focused message link');
             assert(result.requestOutcome === 'cooldown' && result.errorText === null, 'The metadata request did not report its cooldown');
             settled = true;
           });
@@ -406,6 +441,127 @@
         assert(messages && messages[0] && messages[0].title === subject && messages[0].Body === linkedBody,
           'The new cache did not contain the downloaded message');
         done();
+      });
+    });
+  }]);
+
+  steps.push(['Keep keyboard focus through filter refresh and selection', function (done) {
+    open('focus', '', function () {
+      return tableHas('First [Campaign]') && app.jQuery.active === 0;
+    }, function () {
+      var yearButton = select('#msg-year-dropdown')[0];
+      yearButton.click();
+      focus(menuItem('msg-year', '2024')[0]);
+      app.setFilterMsgYearDropdown(0, 2025);
+      var year = menuItem('msg-year', '2024')[0];
+      assert(isFocused(year), 'Refreshing the year menu lost the focused year');
+      year.click();
+      assert(isFocused(yearButton), 'Selecting a year did not focus its dropdown button');
+      waitFor(function () { return tableHas('NAVADMIN 2024 subject'); }, function () {
+        assert(isFocused(yearButton), 'Loading the selected year moved focus away from its dropdown button');
+        var typeButton = select('#msg-type-dropdown')[0];
+        typeButton.click();
+        var type = menuItem('msg-type', 'ALNAV')[0];
+        focus(type);
+        type.click();
+        assert(isFocused(typeButton), 'Selecting a type did not focus its dropdown button');
+        waitFor(function () { return tableHas('ALNAV 2025 subject'); }, done);
+      });
+    });
+  }]);
+
+  steps.push(['Fit the Title dropdown and maximize the message field within the viewport', function (done) {
+    frame.style.width = '320px';
+    open('reflow', '', function () { return tableHas('First [Campaign]') && app.jQuery.active === 0; }, function () {
+      var viewport = app.document.documentElement;
+      var titleButton = select('.input-group button.dropdown-toggle').filter(function () {
+        return app.jQuery(this).text() === 'Title';
+      })[0];
+      var menu = app.jQuery(titleButton).next('.dropdown-menu')[0];
+
+      function checkTitleMenu() {
+        titleButton.click();
+        var menuBounds = menu.getBoundingClientRect();
+        assert(menu.offsetWidth > titleButton.offsetWidth, 'The Title menu should be allowed to grow wider than its button');
+        assert(menuBounds.left >= 0 && menuBounds.right <= viewport.clientWidth + 1,
+          'The open Title menu extended outside the viewport');
+        assert(menu.scrollWidth <= menu.clientWidth + 1 && viewport.scrollWidth <= viewport.clientWidth + 1,
+          'Opening the Title menu introduced horizontal scrolling');
+        titleButton.click();
+      }
+
+      assert(app.innerWidth === 320, 'Expected a 320 CSS pixel viewport');
+      checkTitleMenu();
+      clickRow('First [Campaign]');
+      waitFor(function () { return modalShown() && modalText() === linkedBody; }, function () {
+        var modal = select('#msg-body-modal')[0];
+        var dialog = select('#msg-body-modal .modal-dialog')[0];
+        var content = select('#msg-body-modal .modal-content')[0];
+        var body = select('#msg-body-modal .modal-body')[0];
+        var heading = select('#msg-body-modal .modal-title');
+        var field = select('#msg-body-modal .modal-body textarea')[0];
+        var close = select('#msg-body-modal .modal-header .close')[0];
+        var footerButtons = select('#msg-body-modal .modal-footer button');
+        var normalHeading = heading.text();
+        var longWord = new Array(24).join('UnbrokenText');
+        var longBody = 'First line\n' + longWord + '\n' + new Array(50).join('More message text\n') + 'Last line';
+        app.jQuery(field).val(longBody);
+
+        function checkDialogWidth() {
+          var modalBounds = modal.getBoundingClientRect();
+          var closeBounds = close.getBoundingClientRect();
+          assert(modal.scrollWidth <= modal.clientWidth + 1 && field.scrollWidth <= field.clientWidth + 1,
+            'Long message text introduced horizontal scrolling');
+          assert(closeBounds.left >= modalBounds.left && closeBounds.right <= modalBounds.right + 1,
+            'The modal Close button extended outside the dialog');
+        }
+
+        function checkViewingSpace() {
+          var margins = app.getComputedStyle(dialog);
+          var bodyStyle = app.getComputedStyle(body);
+          var contentBounds = content.getBoundingClientRect();
+          var fieldBounds = field.getBoundingClientRect();
+          var availableHeight = app.innerHeight - parseFloat(margins.marginTop) - parseFloat(margins.marginBottom);
+          var bodyHeight = body.clientHeight - parseFloat(bodyStyle.paddingTop) - parseFloat(bodyStyle.paddingBottom);
+          var contentHeight = contentBounds.bottom - contentBounds.top;
+          var fieldHeight = fieldBounds.bottom - fieldBounds.top;
+          assert(Math.abs(contentHeight - availableHeight) <= 2,
+            'The dialog used ' + contentHeight + 'px of ' + availableHeight + 'px available');
+          assert(bodyHeight > 0 && Math.abs(fieldHeight - bodyHeight) <= 2,
+            'The message field used ' + fieldHeight + 'px of ' + bodyHeight + 'px inside the body');
+          assert(field.scrollHeight > field.clientHeight, 'The long message should scroll inside the field');
+          footerButtons.each(function () {
+            var bounds = this.getBoundingClientRect();
+            assert(bounds.top >= 0 && bounds.bottom > bounds.top && bounds.bottom <= app.innerHeight + 1,
+              'A footer button extended outside the viewport');
+          });
+        }
+
+        function checkLayout() {
+          checkDialogWidth();
+          checkViewingSpace();
+          heading.text('Long subject ' + longWord);
+          checkDialogWidth();
+          heading.text(normalHeading);
+        }
+
+        assert(modalText() === longBody, 'Message line breaks were not preserved');
+        checkLayout();
+        frame.style.width = '1200px';
+        waitFor(function () { return app.innerWidth === 1200; }, function () {
+          checkLayout();
+          frame.style.height = '320px';
+          waitFor(function () { return app.innerHeight === 320; }, function () {
+            checkLayout();
+            close.click();
+            waitFor(function () { return !select(modal).is(':visible') && !messageRoute(1); }, function () {
+              checkTitleMenu();
+              frame.style.width = '100%';
+              frame.style.height = '560px';
+              done();
+            });
+          });
+        });
       });
     });
   }]);

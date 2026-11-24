@@ -80,7 +80,7 @@
 
   /**
    * Read the active route and the list it came from.
-   * @returns {Object} The current route, its originating list, and its message depth.
+   * @returns {Object} The route, originating list, message depth, and optional opener.
    */
   function readHistory() {
     var route = readRoute(window.location.href);
@@ -88,15 +88,17 @@
     return {
       route: route,
       list: state ? { type: state.listType, year: state.listYear } : route,
-      depth: state ? state.messageDepth : 0
+      depth: state ? state.messageDepth : 0,
+      opener: state && state.opener || null
     };
   }
 
-  function pushMessageEntry(type, year, number, list, depth) {
+  function pushMessageEntry(type, year, number, list, depth, opener) {
     window.history.pushState({
       messageDepth: depth,
       listType: list.type,
-      listYear: list.year
+      listYear: list.year,
+      opener: opener || null
     }, '', createURLParameters(type, year, number));
   }
 
@@ -131,17 +133,18 @@
    * @param {number} number The message number.
    * @param {Object} list The originating list selection.
    * @param {Object|null} previousMessage The message already open, if any.
+   * @param {Object|null} [opener] The original subject link’s type, year, and number.
    * @returns {number} The number of entries back to the originating list.
    */
-  function pushMessage(type, year, number, list, previousMessage) {
+  function pushMessage(type, year, number, list, previousMessage, opener) {
     var depth = previousMessage ? previousMessage.depth + 1 : 1;
     if (previousMessage && !previousMessage.depth) {
       console.log('Adding the originating list before opening a message reference.');
       replaceWithList(list);
-      pushMessageEntry(previousMessage.type, previousMessage.year, previousMessage.number, list, 1);
+      pushMessageEntry(previousMessage.type, previousMessage.year, previousMessage.number, list, 1, opener);
       depth = 2;
     }
-    pushMessageEntry(type, year, number, list, depth);
+    pushMessageEntry(type, year, number, list, depth, opener);
     return depth;
   }
 

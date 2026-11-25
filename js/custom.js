@@ -83,7 +83,6 @@ $(document).ready(function() {
   $(searchInput).on('paste cut', function() {
     window.setTimeout(function() { msgFilterSearchInputChanged(true); }, 0);
   });
-  $('#nav-app-link').click(navigateToAppStore);
   msgModal.find('.modal-share-link').click(shareUserSelectedMessageLink);
   // Wait for Bootstrap to finish each transition before opening or closing again.
   msgModal.on('show.bs.modal', function() {
@@ -1342,16 +1341,4 @@ function shareUserSelectedMessageLink(e) {
     var link = Navadmin.navigation.shareLink(selectedMessage.type, selectedMessage.year, selectedMessage.number, true);
     window.prompt('Copy the below share link to clipboard (\u229e Ctrl+C / \uf8ff \u2318+C)', link);
   }
-}
-
-/**
- * Open the store listing for the visitor’s platform.
- * @param {jQuery.Event} e The App link click.
- */
-function navigateToAppStore(e) {
-  e.preventDefault();
-  var appLink = getMobileOperatingSystem() == 'android'
-    ? 'https://play.google.com/store/apps/details?id=com.ansonliu.navadmin'
-    : 'https://apps.apple.com/us/app/navadmin-viewer/id1345135985';
-  window.location.assign(appLink);
 }

@@ -3,20 +3,6 @@ function pad(num, size) {
   return ('000' + num).slice(-size);
 }
 
-/**
- * Identify the mobile platform so the app link can open the appropriate store.
- * @returns {string} The platform name android, ios, or unknown.
- * @see https://stackoverflow.com/a/21742107/761902
- */
-function getMobileOperatingSystem() {
-  var userAgent = navigator.userAgent || navigator.vendor || window.opera;
-  if (/android/i.test(userAgent))
-    return "android";
-  if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream)
-    return "ios";
-  return "unknown";
-}
-
 //UUID generation
 //https://stackoverflow.com/a/2117523/761902
 function uuidv4() {

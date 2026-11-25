@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "conversion": {
+    "id": "navy-pfa-run-equivalent",
+    "referenceEvent": "run",
+    "weightCoefficient": 4.087,
+    "interceptMinutes": {
+      "male": 6.296,
+      "female": 8.066
+    },
+    "minimumWeightLb": 50,
+    "maximumWeightLb": 400,
+    "nonpositiveDenominator": 1
+  },
+  "models": [
+    {
+      "id": "cybex-625c-750c-770c",
+      "name": "Cybex 625C / 750C / 770C",
+      "calorieOffset": 3,
+      "verification": "mynavy-portal"
+    },
+    {
+      "id": "life-fitness-95ci-classic",
+      "name": "Life Fitness 95Ci / Classic Series (CLSC) Upright Bike",
+      "calorieOffset": 0,
+      "verification": "mynavy-portal"
+    },
+    {
+      "id": "life-fitness-95ci-xxl",
+      "name": "Life Fitness 95Ci XXL",
+      "calorieOffset": 0,
+      "verification": "mynavy-portal"
+    },
+    {
+      "id": "life-fitness-95c-inspire",
+      "name": "Life Fitness 95C Inspire",
+      "calorieOffset": -4,
+      "verification": "mynavy-portal"
+    },
+    {
+      "id": "matrix-u5x",
+      "name": "Matrix U5X",
+      "calorieOffset": -5,
+      "verification": "mynavy-portal"
+    },
+    {
+      "id": "life-fitness-inc-integrity",
+      "name": "Life Fitness INC / Integrity Series Upright Bike",
+      "calorieOffset": -5.199999809265137,
+      "verification": "mynavy-portal"
+    },
+    {
+      "id": "life-fitness-aspc-sl-inc-sl",
+      "name": "Life Fitness ASPC / SL Console or INC / SL Console",
+      "calorieOffset": -2,
+      "verification": "mynavy-portal"
+    }
+  ],
+  "sources": {
+    "mynavy-portal": {
+      "title": "MyNavy Portal PFA/CFA Calculator",
+      "url": "https://www.mn3p.navy.mil/web/performance/pfa-calculator",
+      "verifiedOn": "2026-11-25",
+      "conversionScript": "https://www.mn3p.navy.mil/o/mil.navy.mnp.pfacalc.web/js/main.min.js",
+      "modelDataResource": "getDropdownData",
+      "referenceTableResource": "getScore",
+      "notes": "The calculator uses the model offsets from its dropdown data and the selected age, sex, and altitude 1.5-mile run standards for every bike. It rounds weight to the nearest whole pound, with half pounds rounded up, and drops fractional seconds from the converted time. The Integrity offset preserves the exact numeric value returned by the portal."
+    },
+    "guide5a": {
+      "title": "Navy PRP Guide 5A, Physical Readiness Test",
+      "edition": "December 2025",
+      "url": "https://www.mynavyhr.navy.mil/Portals/55/Support/Culture%20Resilience/Physical/Guide-5A%20Physical%20Readiness%20Test.pdf",
+      "notes": "Guide 5A specifies reading the calories at the 12-minute mark and identifies the official PFA app as the source for stationary bike standards."
+    },
+    "approvedEquipment": {
+      "title": "Navy Physical Readiness Program Approved Alternate Cardio Equipment",
+      "url": "https://www.mynavyhr.navy.mil/Portals/55/Support/Culture%20Resilience/Physical/Approved%20Alternate%20Cardio%20Equipment%20List%20Jan%202025.pdf"
+    },
+    "legacyApp": {
+      "title": "Official Navy PFA mobile calculator, supplied local archive",
+      "version": "3.0",
+      "archivePath": "3_0/default/Assets/html/calculator/js/calculator.js",
+      "notes": "The conversion coefficients and legacy bike offsets agree with the portal. In this version, the SL profile lists only INC / SL, and the Integrity offset is written as -5.2."
+    }
+  }
+}

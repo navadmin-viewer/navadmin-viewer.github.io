@@ -275,7 +275,7 @@ const web = http.createServer((request, response) => {
     respond(response, 404, 'text/plain', 'Optional search module unavailable');
     return;
   }
-  if (scenario && relative === '') {
+  if (scenario && (relative === '' || relative === 'index.html')) {
     const endpoint = 'http://' + host + ':' + api.address().port + '/' + scenario[1];
     const queueTrace = /^(priority|waitinganimation)_/.test(scenario[1]) ? [
       'window.fixtureQueueStarts = [];',
@@ -365,7 +365,7 @@ const web = http.createServer((request, response) => {
   }
   const name = path.resolve(project, relative.endsWith('/') ? relative + 'index.html' : relative);
   const contentType = fileTypes[path.extname(name)];
-  const asset = /^(?:js\/|css\/|assets\/|view-message\/|tests\/browser-tests\.js$|manifest\.json$|favicon\.ico$)/;
+  const asset = /^(?:js\/|css\/|assets\/|view-message\/|pfa-calculator\/|tests\/browser-tests\.js$|manifest\.json$|favicon\.ico$)/;
   if (!asset.test(relative) || !name.startsWith(project + path.sep) || !contentType || !fs.existsSync(name)) {
     respond(response, 404, 'text/plain', 'Not found');
     return;

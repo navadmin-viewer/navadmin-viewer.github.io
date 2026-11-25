@@ -6,18 +6,21 @@ const project = path.resolve(__dirname, '..');
 const host = '127.0.0.1';
 const requests = [];
 const types = ['NAVADMIN', 'ALNAV', 'MARADMIN', 'ALMAR'];
-const linkedBody = 'Literal <tag> & source text\nSee NAVADMIN 002/25 and OPNAVINST 10126.5.';
-const searchBody = 'A literal [Needle]+ <img src=x onerror="window.fixtureMarkupRan=true"> & more.\nSecond line.';
+const linkedMessageBody = 'Literal <tag> & source text\nSee NAVADMIN 002/25 and OPNAVINST 10126.5.';
+const searchMessageBody = 'A literal [Needle]+ <img src=x onerror="window.fixtureMarkupRan=true"> & more.\nSecond line.';
 const sharedStorage = {
   offline: 'main',
   bulkresume: 'bulk',
   bulkoffline: 'bulk',
+  fuzzylateload: 'fuzzyoffline',
+  fuzzyunavailable: 'fuzzyoffline',
   quotaevictionoffline: 'quotaeviction',
   quotaoffline: 'quota',
   writefallbackseed: 'writefallback',
   writefallbackoffline: 'writefallback'
 };
-const offlineCases = ['offline', 'bulkoffline', 'quotaevictionoffline', 'quotaoffline', 'writefallbackoffline'];
+const offlineCases = ['offline', 'bulkoffline', 'fuzzyoffline', 'fuzzylateload', 'fuzzyunavailable',
+  'quotaevictionoffline', 'quotaoffline', 'writefallbackoffline'];
 
 function respond(response, status, contentType, content) {
   response.writeHead(status, {
@@ -115,12 +118,12 @@ const api = http.createServer((request, response) => {
       if (caseName === 'waitinganimation') delay = form.year === '2024' ? 1600 : number === 11 ? 130 : 750;
       if (caseName === 'searchburst') delay = 600;
       if (caseName === 'sessioncache') delay += 300;
-      let message = bulkSelectedYear && number === 2 ? searchBody : number === 1 ? linkedBody : 'Body of message ' + number;
-      if (caseName === 'searchburst') message += '\nAnother archive hit';
-      if (caseName === 'restoredsearch') message = linkedBody;
+      let messageBody = bulkSelectedYear && number === 2 ? searchMessageBody : number === 1 ? linkedMessageBody : 'Body of message ' + number;
+      if (caseName === 'searchburst') messageBody += '\nAnother cross-year hit';
+      if (caseName === 'restoredsearch') messageBody = linkedMessageBody;
       setTimeout(() => {
         recorded.httpStatus = status;
-        respond(response, status, 'text/plain', status === 200 ? message : '');
+        respond(response, status, 'text/plain', status === 200 ? messageBody : '');
       }, delay);
     } else if (endpoint === 'updateUserInfo') {
       const attempts = requests.filter(row => row.scenario === scenario && row.endpoint === endpoint).length;
@@ -147,7 +150,7 @@ function storageSettings(scenario) {
   const denyStorage = caseName === 'nostorage';
   const denyIndexedDB = denyStorage || caseName === 'sessioncache';
   const denyCacheRead = caseName === 'cacheread';
-  const denyBodyWrites = caseName === 'writefallback';
+  const denyMessageBodyWrites = caseName === 'writefallback';
   const fillStorage = caseName === 'quota';
   return [
     '(function() {',
@@ -162,25 +165,25 @@ function storageSettings(scenario) {
     '    };',
     '  }',
     denyCacheRead || fillStorage ? [
-      '  var bodyWrites = 0;',
+      '  var messageBodyWrites = 0;',
       '  var originalTransaction = IDBDatabase.prototype.transaction;',
       '  IDBDatabase.prototype.transaction = function(stores, mode) {',
       denyCacheRead ? '    if (mode === "readonly" && stores.indexOf("statuses") !== -1) {' +
         ' window.cacheReadAttempts = 1; throw new Error("Test IndexedDB cache read denied"); }' : '',
-      fillStorage ? '    if (mode === "readwrite" && stores.indexOf("bodies") !== -1 && ++bodyWrites > 2) {' +
+      fillStorage ? '    if (mode === "readwrite" && stores.indexOf("bodies") !== -1 && ++messageBodyWrites > 2) {' +
         ' var error = new Error("Test IndexedDB cache is full"); error.name = "QuotaExceededError"; throw error; }' : '',
       '    return originalTransaction.apply(this, arguments);',
       '  };'
     ].join('\n') : '',
-    denyBodyWrites ? [
-      '  window.deniedDatabaseBodyWrites = 0;',
+    denyMessageBodyWrites ? [
+      '  window.deniedDatabaseMessageBodyWrites = 0;',
       '  var originalPut = IDBObjectStore.prototype.put;',
       '  IDBObjectStore.prototype.put = function() {',
       '    var request = originalPut.apply(this, arguments);',
       '    if (this.name === "bodies") {',
       '      var transaction = this.transaction;',
       '      request.onsuccess = function() {',
-      '        window.deniedDatabaseBodyWrites++;',
+      '        window.deniedDatabaseMessageBodyWrites++;',
       '        transaction.abort();',
       '      };',
       '    }',
@@ -223,13 +226,17 @@ const web = http.createServer((request, response) => {
 
   const scenario = url.pathname.match(/^\/case\/([\w-]+)\/(.*)$/);
   const relative = scenario ? scenario[2] : url.pathname.slice(1);
+  if (scenario && scenario[1].startsWith('fuzzyunavailable_') && relative === 'js/message-search-fuzzy.js') {
+    respond(response, 404, 'text/plain', 'Optional search module unavailable');
+    return;
+  }
   if (scenario && relative === '') {
     const endpoint = 'http://' + host + ':' + api.address().port + '/' + scenario[1];
     const queueTrace = /^(priority|waitinganimation)_/.test(scenario[1]) ? [
       'window.fixtureQueueStarts = [];',
       'window.fixtureQueuePeak = 0;',
-      'var fixtureGetMsgBody = getMsgBody;',
-      'getMsgBody = function(type, year, number, onDone, background) {',
+      'var fixtureGetMessageBody = getMessageBody;',
+      'getMessageBody = function(type, year, number, onDone, background) {',
       '  var trace = {',
       '    key: year + "/" + number,',
       '    selectedYear: document.getElementById("msg-year-dropdown-label").textContent,',
@@ -238,7 +245,7 @@ const web = http.createServer((request, response) => {
       '  window.fixtureQueueStarts.push(trace);',
       '  var active = window.fixtureQueueStarts.filter(function(item) { return !item.settled; }).length;',
       '  window.fixtureQueuePeak = Math.max(window.fixtureQueuePeak, active);',
-      '  return fixtureGetMsgBody(type, year, number, function() {',
+      '  return fixtureGetMessageBody(type, year, number, function() {',
       '    trace.settled = true;',
       '    if (onDone) onDone.apply(this, arguments);',
       '  }, background);',
@@ -255,24 +262,36 @@ const web = http.createServer((request, response) => {
       'fixtureSearchObserver.observe(document.getElementById("message-search-spinner"), {',
       '  attributes: true, attributeFilter: ["hidden"], attributeOldValue: true',
       '});',
-      'window.fixtureHeldBodyWrites = {};',
+      'window.fixtureHeldMessageBodyWrites = {};',
       'var fixtureStore = Navadmin.messageStore;',
-      'var fixtureListBodyRecords = fixtureStore.listBodyRecords;',
-      'var fixtureSaveBodyResult = fixtureStore.saveBodyResult;',
-      'fixtureStore.listBodyRecords = function(type, year, callback) {',
-      '  fixtureStore.listBodyRecords = fixtureListBodyRecords;',
-      '  fixtureListBodyRecords(type, year, function(records) {',
-      '    window.fixtureFinishCacheRead = function() { callback(records); };',
+      'var fixtureListMessageBodyRecords = fixtureStore.listMessageBodyRecords;',
+      'var fixtureSaveMessageBodyResult = fixtureStore.saveMessageBodyResult;',
+      'fixtureStore.listMessageBodyRecords = function(type, year, callback) {',
+      '  fixtureStore.listMessageBodyRecords = fixtureListMessageBodyRecords;',
+      '  fixtureListMessageBodyRecords(type, year, function(records) {',
+      '    window.fixtureFinishMessageBodyRead = function() { callback(records); };',
       '  });',
       '};',
-      'fixtureStore.saveBodyResult = function(type, year, number) {',
+      'fixtureStore.saveMessageBodyResult = function(type, year, number) {',
       '  var args = arguments;',
       '  if (year === 2025 && (number === 2 || number === 3)) {',
-      '    window.fixtureHeldBodyWrites[number] = function() { fixtureSaveBodyResult.apply(fixtureStore, args); };',
+      '    window.fixtureHeldMessageBodyWrites[number] = function() { fixtureSaveMessageBodyResult.apply(fixtureStore, args); };',
       '  } else {',
-      '    fixtureSaveBodyResult.apply(fixtureStore, args);',
+      '    fixtureSaveMessageBodyResult.apply(fixtureStore, args);',
       '  }',
       '};'
+    ].join('\n') : '';
+    const holdMiniSearch = scenario[1].startsWith('fuzzylateload_') ? [
+      '<script>(function() {',
+      '  var head = document.head;',
+      '  var appendChild = head.appendChild;',
+      '  head.appendChild = function(node) {',
+      '    if (!/\\/external\\/minisearch-[^/]+\\.js$/.test(node.src)) return appendChild.call(head, node);',
+      '    head.appendChild = appendChild;',
+      '    window.fixtureReleaseMiniSearch = function() { appendChild.call(head, node); };',
+      '    return node;',
+      '  };',
+      '}());</script>'
     ].join('\n') : '';
     const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '\n' + restoredSearch + '</script>';
     const index = fs.readFileSync(path.join(project, 'index.html'), 'utf8')
@@ -280,6 +299,8 @@ const web = http.createServer((request, response) => {
       .replace(/<script>\s*\/\/ Your web app's Firebase configuration[\s\S]*?<\/script>/, '')
       .replace('<script src="js/message-store.js"></script>',
         '<script>' + storageSettings(scenario[1]) + '</script><script src="js/message-store.js"></script>')
+      .replace('<script src="js/message-search-fuzzy.js"></script>',
+        holdMiniSearch + '<script src="js/message-search-fuzzy.js"></script>')
       .replace('<script src="js/custom.js"></script>', testSettings + '<script src="js/custom.js"></script>');
     respond(response, 200, 'text/html', index);
     return;

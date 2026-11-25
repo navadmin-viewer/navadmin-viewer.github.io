@@ -86,7 +86,7 @@
           </div>
         </div>
       </div>
-      <input type="text" class="form-control" id="msg-search-input" placeholder="Search all downloaded messages" aria-label="Search messages">
+      <input type="text" class="form-control" id="msg-search-input" placeholder="Search NAVADMIN messages across downloaded years" aria-label="Search messages">
     </div>
   </nav>
   <div class="container-fluid" id="main-container">
@@ -147,7 +147,7 @@
       </div>
     </footer>
     <!-- Modal -->
-    <div class="modal fade" id="msg-body-modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLongTitle" aria-hidden="true">
+    <div class="modal fade" id="message-body-modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLongTitle" aria-hidden="true">
       <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
           <div class="modal-header">
@@ -180,6 +180,8 @@
   <script src="js/fetch.js"></script>
   <script src="js/message-downloads.js"></script>
   <script src="js/message-search.js"></script>
+  <!-- Optional typo-tolerant Full Message search -->
+  <script src="js/message-search-fuzzy.js"></script>
   <script src="js/custom.js"></script>
 
   <!-- The core Firebase JS SDK is always required and must be listed first -->

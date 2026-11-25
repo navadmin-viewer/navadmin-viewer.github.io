@@ -118,29 +118,29 @@ footer {
   word-wrap: break-word;
 }
 
-#msg-body-modal .modal-dialog {
+#message-body-modal .modal-dialog {
   height: calc(100% - 1rem);
   margin-top: 0.5rem;
   margin-bottom: 0.5rem;
 }
 
-#msg-body-modal .modal-content {
+#message-body-modal .modal-content {
   height: 100%;
   min-height: 14rem; /* Keep the message field usable on very short screens. */
 }
 
-#msg-body-modal .modal-header,
-#msg-body-modal .modal-footer {
+#message-body-modal .modal-header,
+#message-body-modal .modal-footer {
   flex-shrink: 0;
 }
 
-#msg-body-modal .modal-body {
+#message-body-modal .modal-body {
   flex: 1 1 0%;
   min-height: 0;
   word-wrap: break-word;
 }
 
-#msg-body-modal .message-text {
+#message-body-modal .message-text {
   height: 100%;
   background-color: #fff;
   resize: none;
@@ -148,7 +148,7 @@ footer {
   word-wrap: break-word;
 }
 
-#msg-body-modal .modal-title {
+#message-body-modal .modal-title {
   flex: 1 1 0%; /* Give long headings a finite width in IE11. */
   min-width: 0;
   max-height: 25vh;
@@ -157,7 +157,7 @@ footer {
 }
 
 @media (max-width: 240px) {
-  #msg-body-modal .modal-content {
+  #message-body-modal .modal-content {
     min-height: 20rem; /* Leave space for the footer buttons to wrap. */
   }
 }

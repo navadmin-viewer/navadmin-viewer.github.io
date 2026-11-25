@@ -19,13 +19,15 @@ A fully featured [web app](https://navadmin-viewer.github.io/) for viewing Navy 
 2. Select the message type and year to browse.
 3. Click the message you want to view.
 
-Search across all previously viewed years of the selected message type.
+Cross-year search works across years for the selected message type. **Title Only** searches message subjects. **Full Message** searches downloaded message bodies and shows literal matches first, followed by typo-tolerant results.
+
+IE11 and other browsers without Unicode property escapes use literal search. To disable fuzzy search for all browsers, remove the `js/message-search-fuzzy.js` script tag from `index.html`.
 
 ## 📡 Offline mode (added 17MAR2025)
 
-The web app downloads messages for the viewed year. The year menu shows a ✓ when the year's downloads are saved in IndexedDB. If IndexedDB is unavailable or rejects writes, a yellow progress bar shows downloads cached in the current tab until you reload or close it. Choose **Download all years** to download every year for the current message type.
+The web app downloads messages for the viewed year. The year menu shows a ✓ when the year's downloads are saved in the persistent store (IndexedDB). If IndexedDB is unavailable or rejects writes, a yellow progress bar shows downloads kept in the in-memory store. These downloads are available in the current tab until you reload or close it. Choose **Download all years** to download every year for the current message type.
 
-When IndexedDB reports that storage is full, the viewer can remove the oldest eligible year of downloaded bodies for one message type to make room for newer messages. All removed bodies stay openable and searchable in the current tab until you reload or close it. Titles stay searchable after reload. Years you are viewing or downloading are protected.
+When IndexedDB reports that the persistent store is full, the viewer can move downloaded message bodies for the oldest eligible year of one message type to the in-memory store to make room for newer messages. You can open and search them in the current tab until you reload or close it. Titles stay searchable after reload. Years you are viewing or downloading are protected.
 
 You can Save (Ctrl-S/Cmd-S) the main website to your computer to use when fully offline because some browsers may not load the online main page without an internet connection (even when the messages are already locally stored). Either save the main site locally or don't navigate away to another website while away from internet.
 
@@ -64,6 +66,8 @@ NAVADMIN Viewer web client uses assets from the following projects. Thank you to
 - [jQuery](https://jquery.com)
 
 - [core-js](https://github.com/zloirock/core-js)
+
+- [MiniSearch](https://github.com/lucaong/minisearch)
 
 - [FireFormat.Info](https://www.fileformat.info/)
 

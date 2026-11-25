@@ -31,35 +31,39 @@
 
   /**
    * Collapse line breaks and repeated whitespace for matching and showing excerpts.
-   * @param {string} body The original message text.
-   * @returns {string|null} The normalized body, if there is text to search.
+   * @param {string} text The message body or search query.
+   * @returns {string|null} The normalized text, if there is text to search.
    */
-  function normalizeBody(body) {
-    return typeof body === 'string' ? body.replace(/\s+/g, ' ').trim() || null : null;
+  function normalizeSearchText(text) {
+    return typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() || null : null;
   }
 
-  function snippetForMatch(body, match) {
+  function snippetForMatch(messageBodyText, match) {
     var matchEnd = match.index + match[0].length;
     var start = Math.max(0, match.index - contextBefore);
-    var end = Math.min(body.length, matchEnd + contextAfter);
+    var end = Math.min(messageBodyText.length, matchEnd + contextAfter);
     return {
-      before: (start ? '\u2026' : '') + body.substring(start, match.index),
+      before: (start ? '\u2026' : '') + messageBodyText.substring(start, match.index),
       match: match[0],
-      after: body.substring(matchEnd, end) + (end < body.length ? '\u2026' : '')
+      after: messageBodyText.substring(matchEnd, end) + (end < messageBodyText.length ? '\u2026' : '')
     };
   }
 
-  function cachedBodySnippet(body, matcher) {
-    if (!body.normalized) {
-      body.text = normalizeBody(body.text);
-      body.normalized = true;
+  function matchMessageBody(messageBody, matcher, fuzzyMatches) {
+    if (!messageBody.normalized) {
+      messageBody.text = normalizeSearchText(messageBody.text);
+      messageBody.normalized = true;
     }
-    if (body.matcher !== matcher) {
-      var match = body.text && matcher.exec(body.text);
-      body.snippet = match ? snippetForMatch(body.text, match) : null;
-      body.matcher = matcher;
+    if (messageBody.matcher !== matcher) {
+      var literalMatch = messageBody.text && matcher.exec(messageBody.text);
+      messageBody.snippet = literalMatch ? snippetForMatch(messageBody.text, literalMatch) : null;
+      messageBody.matcher = matcher;
     }
-    return body.snippet;
+    if (messageBody.snippet) return { snippet: messageBody.snippet, fuzzyScore: 0 };
+
+    var fuzzy = fuzzyMatches && fuzzyMatches.get(messageBody);
+    var fuzzyMatch = fuzzy && messageBody.text && fuzzy.findMatch(messageBody.text);
+    return fuzzyMatch ? { snippet: snippetForMatch(messageBody.text, fuzzyMatch), fuzzyScore: fuzzy.score } : null;
   }
 
   function appendSnippet(cell, text) {
@@ -74,16 +78,16 @@
     cell.appendChild(snippet);
   }
 
-  function matcher(query) {
-    var search = fullMessage ? normalizeBody(query) : query;
+  function createLiteralMatcher(query) {
+    var search = fullMessage ? normalizeSearchText(query) : query;
     return search ? new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
   }
 
   Navadmin.messageSearch = {
     init: init,
     isFullMessage: isFullMessage,
-    matcher: matcher,
-    cachedBodySnippet: cachedBodySnippet,
+    createLiteralMatcher: createLiteralMatcher,
+    matchMessageBody: matchMessageBody,
     appendSnippet: appendSnippet
   };
 })(window, window.jQuery);

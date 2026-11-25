@@ -1,17 +1,17 @@
 window.Navadmin = window.Navadmin || {};
 
 window.Navadmin.messageStore = (function() {
-  var databaseName = 'nv-messageCache';
-  var metadataStore = 'metadata';
-  var bodyStore = 'bodies';
-  var statusStore = 'statuses';
-  var cachedMessages = new Map();
-  var bodyStatuses = new Map();
-  var sessionBodies = new Map();
-  var database;
-  var databaseWritesUnavailable = false;
+  var persistentDatabaseName = 'nv-messageCache';
+  var persistentMetadataStoreName = 'metadata';
+  var persistentMessageBodyRecordStoreName = 'bodies';
+  var persistentMessageBodyStatusStoreName = 'statuses';
+  var inMemoryMetadataStore = new Map();
+  var persistedMessageBodyStatuses = new Map();
+  var inMemoryMessageBodyRecordStore = new Map();
+  var persistentDatabase;
+  var persistentWritesUnavailable = false;
   var quotaLimitedYears = new Set();
-  var bodyWritesByYear = new Map();
+  var messageBodyWritesByYear = new Map();
   var quotaRecovery;
   var protectYear;
   var onEvicted;
@@ -22,23 +22,23 @@ window.Navadmin.messageStore = (function() {
     return msgTypeToString(type) + '/' + year;
   }
 
-  function bodyKey(type, year, number) {
+  function messageBodyRecordKey(type, year, number) {
     return yearKey(type, year) + '/' + number;
   }
 
-  function bodyStatus(record) {
+  function messageBodyStatus(record) {
     return { status: record.status, savedAt: record.savedAt };
   }
 
-  function hasBodyText(body) {
-    return typeof body === 'string' && /\S/.test(body);
+  function hasMessageBodyText(messageBody) {
+    return typeof messageBody === 'string' && /\S/.test(messageBody);
   }
 
-  function bodyRecord(type, year, number, body, status, savedAt) {
-    return { type: type, year: year, number: number, body: body, status: status, savedAt: savedAt };
+  function createMessageBodyRecord(type, year, number, messageBody, status, savedAt) {
+    return { type: type, year: year, number: number, body: messageBody, status: status, savedAt: savedAt };
   }
 
-  function withoutBody(message) {
+  function withoutMessageBody(message) {
     if (!Object.prototype.hasOwnProperty.call(message, 'Body')) return message;
     var metadata = {};
     Object.keys(message).forEach(function(key) {
@@ -48,7 +48,7 @@ window.Navadmin.messageStore = (function() {
   }
 
   /**
-   * Merge one year's metadata by message number. Bodies are stored separately.
+   * Merge one year's metadata by message number. Message bodies are stored separately.
    * @param {Object[]|null|undefined} cached The previously cached messages, when available.
    * @param {Object[]|null} incoming The supplied message metadata, if any.
    * @returns {{messages: (Object[]|null), changed: boolean}} The sorted list and whether the metadata changed.
@@ -67,7 +67,7 @@ window.Navadmin.messageStore = (function() {
           JSON.stringify(previous.actSum) !== JSON.stringify(message.actSum)) {
         changed = true;
       }
-      messagesByNumber[message.number] = withoutBody(message);
+      messagesByNumber[message.number] = withoutMessageBody(message);
     });
     var merged = Object.keys(messagesByNumber).map(function(number) {
       return messagesByNumber[number];
@@ -77,10 +77,10 @@ window.Navadmin.messageStore = (function() {
   }
 
   function setYear(record) {
-    var cachedYears = cachedMessages.get(record.type);
+    var cachedYears = inMemoryMetadataStore.get(record.type);
     if (!cachedYears) {
       cachedYears = new Map();
-      cachedMessages.set(record.type, cachedYears);
+      inMemoryMetadataStore.set(record.type, cachedYears);
     }
     var existing = cachedYears.get(record.year);
     var result = mergeYearMessages(existing, record.messages);
@@ -88,18 +88,19 @@ window.Navadmin.messageStore = (function() {
     return result;
   }
 
-  function preferSessionBody(saved, session) {
-    return session && (!saved || saved.status !== 200 && (session.status === 200 || session.savedAt > saved.savedAt));
+  function preferInMemoryMessageBodyRecord(saved, inMemoryRecord) {
+    return inMemoryRecord && (!saved ||
+      saved.status !== 200 && (inMemoryRecord.status === 200 || inMemoryRecord.savedAt > saved.savedAt));
   }
 
   /**
-   * Check whether IndexedDB writes are enabled, optionally for a particular year.
+   * Check whether the persistent store can accept writes, optionally for a particular year.
    * @param {MsgType} [type] The message type.
    * @param {number} [year] The message year.
-   * @returns {boolean} Whether the cache can attempt to persist a write.
+   * @returns {boolean} Whether a persistent store write can be attempted.
    */
   function canPersist(type, year) {
-    return !!database && !databaseWritesUnavailable &&
+    return !!persistentDatabase && !persistentWritesUnavailable &&
       (type === undefined || !quotaLimitedYears.has(yearKey(type, year)));
   }
 
@@ -108,9 +109,9 @@ window.Navadmin.messageStore = (function() {
   }
 
   function handleWriteError(error) {
-    if (error && !isQuotaError(error) && !databaseWritesUnavailable) {
-      databaseWritesUnavailable = true;
-      console.log('Unable to write to IndexedDB. New messages will be cached in this tab only.', error.name);
+    if (error && !isQuotaError(error) && !persistentWritesUnavailable) {
+      persistentWritesUnavailable = true;
+      console.log('Unable to write to the persistent store. New messages will use the in-memory store for this tab.', error.name);
     }
   }
 
@@ -118,14 +119,14 @@ window.Navadmin.messageStore = (function() {
     var transaction;
     var workError;
     try {
-      transaction = database.transaction(stores, mode);
+      transaction = persistentDatabase.transaction(stores, mode);
     } catch (error) {
       setTimeout(function() { callback(error); }, 0);
       return;
     }
     transaction.oncomplete = function() { callback(null); };
     transaction.onabort = function() {
-      callback(workError || transaction.error || new Error('The message cache transaction was aborted.'));
+      callback(workError || transaction.error || new Error('The persistent store transaction was aborted.'));
     };
     function run(step) {
       try {
@@ -141,7 +142,7 @@ window.Navadmin.messageStore = (function() {
   /**
    * Let the viewer protect years in use and update its UI after eviction.
    * @param {function} isProtected Receives the message type and year and returns whether to keep them.
-   * @param {function} didEvict Receives the message type, year, and records moved to memory after eviction.
+   * @param {function} didEvict Receives the message type, year, and message body records moved to the in-memory store.
    */
   function setEvictionHandlers(isProtected, didEvict) {
     protectYear = isProtected;
@@ -149,12 +150,12 @@ window.Navadmin.messageStore = (function() {
   }
 
   function isProtectedYear(type, year) {
-    return bodyWritesByYear.has(yearKey(type, year)) || (protectYear && protectYear(type, year));
+    return messageBodyWritesByYear.has(yearKey(type, year)) || (protectYear && protectYear(type, year));
   }
 
   function oldestEvictionCandidate(incomingYear) {
     var oldest;
-    bodyStatuses.forEach(function(status, key) {
+    persistedMessageBodyStatuses.forEach(function(status, key) {
       if (status.status !== 200) return;
       var separator = key.indexOf('/');
       var year = Number(key.slice(separator + 1, key.lastIndexOf('/')));
@@ -168,12 +169,12 @@ window.Navadmin.messageStore = (function() {
   function evictYear(victim, callback) {
     var prefix = yearKey(victim.type, victim.year) + '/';
     var records = new Map();
-    var hasText = false;
+    var hasPublishedMessageBody = false;
     var processed = false;
-    transact([bodyStore, statusStore], 'readwrite', function(transaction, run) {
-      var bodies = transaction.objectStore(bodyStore);
+    transact([persistentMessageBodyRecordStoreName, persistentMessageBodyStatusStoreName], 'readwrite', function(transaction, run) {
+      var messageBodyRecords = transaction.objectStore(persistentMessageBodyRecordStoreName);
       var range = window.IDBKeyRange.bound(prefix, prefix + '\uffff');
-      var request = bodies.openCursor(range);
+      var request = messageBodyRecords.openCursor(range);
       request.onsuccess = function() {
         run(function() {
           if (!canPersist() || isProtectedYear(victim.type, victim.year)) return;
@@ -181,33 +182,33 @@ window.Navadmin.messageStore = (function() {
           if (cursor) {
             var record = cursor.value;
             records.set(cursor.key, record);
-            hasText = hasText || record.status === 200;
+            hasPublishedMessageBody = hasPublishedMessageBody || record.status === 200;
             cursor.continue();
             return;
           }
           // Another tab can evict this year before this transaction starts.
-          if (hasText) {
-            bodies.delete(range);
-            transaction.objectStore(statusStore).delete(range);
+          if (hasPublishedMessageBody) {
+            messageBodyRecords.delete(range);
+            transaction.objectStore(persistentMessageBodyStatusStoreName).delete(range);
           }
           processed = true;
         });
       };
     }, function(error) {
       if (error || !processed) return callback(false);
-      bodyStatuses.forEach(function(status, key) {
-        if (key.indexOf(prefix) === 0) bodyStatuses.delete(key);
+      persistedMessageBodyStatuses.forEach(function(status, key) {
+        if (key.indexOf(prefix) === 0) persistedMessageBodyStatuses.delete(key);
       });
       var movedRecords = [];
-      if (hasText) {
+      if (hasPublishedMessageBody) {
         records.forEach(function(record, key) {
-          var session = sessionBodies.get(key);
-          if (preferSessionBody(record, session)) record = session;
-          sessionBodies.set(key, record);
+          var inMemoryRecord = inMemoryMessageBodyRecordStore.get(key);
+          if (preferInMemoryMessageBodyRecord(record, inMemoryRecord)) record = inMemoryRecord;
+          inMemoryMessageBodyRecordStore.set(key, record);
           movedRecords.push(record);
         });
       } else {
-        records.forEach(rememberSavedStatus);
+        records.forEach(rememberPersistentMessageBodyStatus);
       }
       try {
         if (onEvicted) onEvicted(victim.type, victim.year, movedRecords);
@@ -248,9 +249,9 @@ window.Navadmin.messageStore = (function() {
     });
   }
 
-  function writeDatabaseBody(transaction, key, record) {
-    transaction.objectStore(bodyStore).put(record, key);
-    transaction.objectStore(statusStore).put(bodyStatus(record), key);
+  function writePersistentMessageBodyRecord(transaction, key, record) {
+    transaction.objectStore(persistentMessageBodyRecordStoreName).put(record, key);
+    transaction.objectStore(persistentMessageBodyStatusStoreName).put(messageBodyStatus(record), key);
   }
 
   function readCursor(request, read) {
@@ -264,9 +265,9 @@ window.Navadmin.messageStore = (function() {
   }
 
   function loadDatabase(callback) {
-    transact([metadataStore, statusStore], 'readonly', function(transaction) {
-      readCursor(transaction.objectStore(metadataStore).openCursor(), setYear);
-      readCursor(transaction.objectStore(statusStore).openCursor(), rememberSavedStatus);
+    transact([persistentMetadataStoreName, persistentMessageBodyStatusStoreName], 'readonly', function(transaction) {
+      readCursor(transaction.objectStore(persistentMetadataStoreName).openCursor(), setYear);
+      readCursor(transaction.objectStore(persistentMessageBodyStatusStoreName).openCursor(), rememberPersistentMessageBodyStatus);
     }, callback);
   }
 
@@ -274,27 +275,27 @@ window.Navadmin.messageStore = (function() {
     var request;
     try {
       var indexedDB = window.indexedDB || window.msIndexedDB;
-      if (indexedDB) request = indexedDB.open(databaseName, 2);
+      if (indexedDB) request = indexedDB.open(persistentDatabaseName, 2);
     } catch (error) {
-      console.log('Unable to open the IndexedDB message cache.', error.name);
+      console.log('Unable to open the persistent store (IndexedDB).', error.name);
     }
     if (!request) return callback();
 
     var unavailable = false;
     request.onupgradeneeded = function(event) {
       if (event.oldVersion === 0) {
-        request.result.createObjectStore(metadataStore);
-        request.result.createObjectStore(bodyStore);
-        request.result.createObjectStore(statusStore);
+        request.result.createObjectStore(persistentMetadataStoreName);
+        request.result.createObjectStore(persistentMessageBodyRecordStoreName);
+        request.result.createObjectStore(persistentMessageBodyStatusStoreName);
         return;
       }
       // Version 1 imported empty legacy Body fields as completed downloads.
-      var bodies = request.transaction.objectStore(bodyStore);
-      var statuses = request.transaction.objectStore(statusStore);
-      readCursor(bodies.openCursor(), function(record, key) {
-        if (record.status === 200 && !hasBodyText(record.body)) {
-          bodies.delete(key);
-          statuses.delete(key);
+      var messageBodyRecords = request.transaction.objectStore(persistentMessageBodyRecordStoreName);
+      var messageBodyStatuses = request.transaction.objectStore(persistentMessageBodyStatusStoreName);
+      readCursor(messageBodyRecords.openCursor(), function(record, key) {
+        if (record.status === 200 && !hasMessageBodyText(record.body)) {
+          messageBodyRecords.delete(key);
+          messageBodyStatuses.delete(key);
         }
       });
     };
@@ -312,9 +313,9 @@ window.Navadmin.messageStore = (function() {
   }
 
   /**
-   * Restore message metadata and download statuses from IndexedDB.
-   * Keep using the in-memory cache if IndexedDB cannot be opened or read.
-   * @param {function} callback Called when the cache is ready for use.
+   * Restore message metadata and message body download statuses from the persistent store.
+   * Use the in-memory store alone if the persistent store cannot be opened or read.
+   * @param {function} callback Called when the message store is ready for use.
    */
   function load(callback) {
     if (loaded) return setTimeout(callback, 0);
@@ -323,13 +324,13 @@ window.Navadmin.messageStore = (function() {
     setTimeout(function() {
       openDatabase(function(opened) {
         if (!opened) return finishLoad();
-        database = opened;
+        persistentDatabase = opened;
         loadDatabase(function(error) {
           if (error) {
-            database.close();
-            database = null;
-            cachedMessages.clear();
-            bodyStatuses.clear();
+            persistentDatabase.close();
+            persistentDatabase = null;
+            inMemoryMetadataStore.clear();
+            persistedMessageBodyStatuses.clear();
           }
           finishLoad();
         });
@@ -350,7 +351,7 @@ window.Navadmin.messageStore = (function() {
    * @returns {number[]} The cached years.
    */
   function years(type) {
-    var cachedYears = cachedMessages.get(type);
+    var cachedYears = inMemoryMetadataStore.get(type);
     var yearNumbers = [];
     if (cachedYears) cachedYears.forEach(function(_, year) { yearNumbers.push(year); });
     return yearNumbers.sort(function(a, b) { return b - a; });
@@ -376,7 +377,7 @@ window.Navadmin.messageStore = (function() {
    * @returns {Object[]|null} The cached list in message-number order, or null if metadata is unavailable.
    */
   function messages(type, year) {
-    var cachedYears = cachedMessages.get(type);
+    var cachedYears = inMemoryMetadataStore.get(type);
     return (cachedYears && cachedYears.get(year)) || null;
   }
 
@@ -396,16 +397,16 @@ window.Navadmin.messageStore = (function() {
   }
 
   /**
-   * Save refreshed year lists to IndexedDB for offline use.
-   * @param {Object[]} records The updated year records already cached in memory.
+   * Save refreshed year lists to the persistent store for offline use.
+   * @param {Object[]} records The updated year records already in the in-memory store.
    */
   function persistMetadata(records) {
     if (!canPersist()) return;
     var newestYearWithMessages = records.reduce(function(year, record) {
       return record.messages && record.messages.length ? Math.max(year, record.year) : year;
     }, 0);
-    writeWithEviction(newestYearWithMessages, [metadataStore], function(transaction, run) {
-      var store = transaction.objectStore(metadataStore);
+    writeWithEviction(newestYearWithMessages, [persistentMetadataStoreName], function(transaction, run) {
+      var store = transaction.objectStore(persistentMetadataStoreName);
       records.forEach(function(record) {
         var key = yearKey(record.type, record.year);
         var read = store.get(key);
@@ -433,7 +434,7 @@ window.Navadmin.messageStore = (function() {
       var year = Number(key);
       var incoming = responseYears[key].msgSkeletons;
       var record = { type: type, year: year, messages: Array.isArray(incoming) ? incoming : null };
-      var cachedYears = cachedMessages.get(type);
+      var cachedYears = inMemoryMetadataStore.get(type);
       if (!record.messages && cachedYears && cachedYears.has(year)) return;
       var result = setYear(record);
       if (result.changed) {
@@ -445,47 +446,47 @@ window.Navadmin.messageStore = (function() {
     return records.length > 0;
   }
 
-  function rememberSavedStatus(record, key) {
-    var status = bodyStatus(record);
+  function rememberPersistentMessageBodyStatus(record, key) {
+    var status = messageBodyStatus(record);
     status.persistent = true;
-    bodyStatuses.set(key, status);
+    persistedMessageBodyStatuses.set(key, status);
   }
 
   /**
-   * Look up a cached download outcome without reading the body text.
+   * Look up a message body download outcome without reading the text.
    * @param {MsgType} type The message type.
    * @param {number} year The message year.
    * @param {number} number The message number.
    * @returns {{status: number, savedAt: number, persistent: boolean}|null} The outcome, timestamp,
-   *   and whether the outcome is stored in IndexedDB, or null if the message has no cached outcome.
+   *   and whether the outcome is in the persistent store, or null if the message has no stored outcome.
    */
-  function getBodyStatus(type, year, number) {
-    var key = bodyKey(type, year, number);
-    var saved = bodyStatuses.get(key);
-    var session = sessionBodies.get(key);
-    if (preferSessionBody(saved, session)) {
-      var status = bodyStatus(session);
+  function getMessageBodyStatus(type, year, number) {
+    var key = messageBodyRecordKey(type, year, number);
+    var saved = persistedMessageBodyStatuses.get(key);
+    var inMemoryRecord = inMemoryMessageBodyRecordStore.get(key);
+    if (preferInMemoryMessageBodyRecord(saved, inMemoryRecord)) {
+      var status = messageBodyStatus(inMemoryRecord);
       // A newer 404 can refresh the retry timer while an older 404 is still on disk.
-      status.persistent = !!saved && saved.status === session.status;
+      status.persistent = !!saved && saved.status === inMemoryRecord.status;
       return status;
     }
     return saved || null;
   }
 
   /**
-   * List years with cached body text, including bodies held only in memory.
+   * List years with message body text in the persistent or in-memory store.
    * @param {MsgType} type The message type.
    * @returns {number[]} The searchable years, newest first.
    */
-  function bodyYears(type) {
+  function messageBodyYears(type) {
     var prefix = msgTypeToString(type) + '/';
     var found = new Set();
-    bodyStatuses.forEach(function(record, key) {
+    persistedMessageBodyStatuses.forEach(function(record, key) {
       if (record.status === 200 && key.indexOf(prefix) === 0) {
         found.add(Number(key.slice(prefix.length, key.lastIndexOf('/'))));
       }
     });
-    sessionBodies.forEach(function(record) {
+    inMemoryMessageBodyRecordStore.forEach(function(record) {
       if (record.type === type && record.status === 200) found.add(record.year);
     });
     var years = [];
@@ -494,22 +495,22 @@ window.Navadmin.messageStore = (function() {
   }
 
   /**
-   * Read a cached body or 404 outcome, including messages whose list metadata is pending.
+   * Read a stored message body or 404 outcome, including messages whose list metadata is pending.
    * @param {MsgType} type The message type.
    * @param {number} year The message year.
    * @param {number} number The message number.
-   * @param {function} callback Receives the record from IndexedDB or memory, or null if unavailable.
+   * @param {function} callback Receives the record from either store, or null if unavailable.
    */
-  function getBodyRecord(type, year, number, callback) {
-    var key = bodyKey(type, year, number);
+  function getMessageBodyRecord(type, year, number, callback) {
+    var key = messageBodyRecordKey(type, year, number);
     var record;
     function finish() {
-      var session = sessionBodies.get(key);
-      callback((preferSessionBody(record, session) ? session : record) || null);
+      var inMemoryRecord = inMemoryMessageBodyRecordStore.get(key);
+      callback((preferInMemoryMessageBodyRecord(record, inMemoryRecord) ? inMemoryRecord : record) || null);
     }
-    if (database) {
-      transact([bodyStore], 'readonly', function(transaction) {
-        var read = transaction.objectStore(bodyStore).get(key);
+    if (persistentDatabase) {
+      transact([persistentMessageBodyRecordStoreName], 'readonly', function(transaction) {
+        var read = transaction.objectStore(persistentMessageBodyRecordStoreName).get(key);
         read.onsuccess = function() { record = read.result; };
       }, finish);
     } else {
@@ -518,26 +519,26 @@ window.Navadmin.messageStore = (function() {
   }
 
   /**
-   * Read a year's cached body records from IndexedDB and memory.
+   * Read a year's message body records from the persistent and in-memory stores.
    * @param {MsgType} type The message type.
    * @param {number} year The message year.
-   * @param {function} callback Receives the records read so far and any in-memory records for the year.
+   * @param {function} callback Receives the records from both stores for the year.
    */
-  function listBodyRecords(type, year, callback) {
+  function listMessageBodyRecords(type, year, callback) {
     var prefix = yearKey(type, year) + '/';
     var records = new Map();
     function finish() {
-      sessionBodies.forEach(function(record, key) {
-        if (key.indexOf(prefix) === 0 && preferSessionBody(records.get(key), record)) records.set(key, record);
+      inMemoryMessageBodyRecordStore.forEach(function(record, key) {
+        if (key.indexOf(prefix) === 0 && preferInMemoryMessageBodyRecord(records.get(key), record)) records.set(key, record);
       });
       var result = [];
       records.forEach(function(record) { result.push(record); });
       callback(result);
     }
-    if (database) {
-      transact([bodyStore], 'readonly', function(transaction) {
+    if (persistentDatabase) {
+      transact([persistentMessageBodyRecordStoreName], 'readonly', function(transaction) {
         var keyRange = window.IDBKeyRange.bound(prefix, prefix + '\uffff');
-        readCursor(transaction.objectStore(bodyStore).openCursor(keyRange), function(record, key) {
+        readCursor(transaction.objectStore(persistentMessageBodyRecordStoreName).openCursor(keyRange), function(record, key) {
           records.set(key, record);
         });
       }, finish);
@@ -547,53 +548,53 @@ window.Navadmin.messageStore = (function() {
   }
 
   /**
-   * Cache a downloaded body or 404 outcome. Recover space on quota errors or keep the outcome in memory.
+   * Store a downloaded message body or 404 outcome. Recover space on quota errors or use the in-memory store.
    * @param {MsgType} type The message type.
    * @param {number} year The message year.
    * @param {number} number The message number.
-   * @param {string|null} body The downloaded message text, or null for a 404.
+   * @param {string|null} messageBody The downloaded message body text, or null for a 404.
    * @param {number} status The HTTP status, either 200 or 404.
    * @param {function} callback Receives the resulting cached record.
    */
-  function saveBodyResult(type, year, number, body, status, callback) {
+  function saveMessageBodyResult(type, year, number, messageBody, status, callback) {
     var groupKey = yearKey(type, year);
-    var key = bodyKey(type, year, number);
-    var record = bodyRecord(type, year, number, status === 200 ? body : null, status, Date.now());
-    function saveInSession() {
-      var previous = sessionBodies.get(key);
+    var key = messageBodyRecordKey(type, year, number);
+    var record = createMessageBodyRecord(type, year, number, status === 200 ? messageBody : null, status, Date.now());
+    function saveInMemory() {
+      var previous = inMemoryMessageBodyRecordStore.get(key);
       if (status === 404 && previous && previous.status === 200) {
         record = previous;
       } else {
-        sessionBodies.set(key, record);
+        inMemoryMessageBodyRecordStore.set(key, record);
       }
       callback(record);
     }
-    if (!canPersist(type, year)) return setTimeout(saveInSession, 0);
+    if (!canPersist(type, year)) return setTimeout(saveInMemory, 0);
 
-    bodyWritesByYear.set(groupKey, (bodyWritesByYear.get(groupKey) || 0) + 1);
-    writeWithEviction(year, [bodyStore, statusStore], function(transaction, run) {
+    messageBodyWritesByYear.set(groupKey, (messageBodyWritesByYear.get(groupKey) || 0) + 1);
+    writeWithEviction(year, [persistentMessageBodyRecordStoreName, persistentMessageBodyStatusStoreName], function(transaction, run) {
       if (status === 200) {
-        writeDatabaseBody(transaction, key, record);
+        writePersistentMessageBodyRecord(transaction, key, record);
       } else {
-        var read = transaction.objectStore(bodyStore).get(key);
+        var read = transaction.objectStore(persistentMessageBodyRecordStoreName).get(key);
         read.onsuccess = function() {
           run(function() {
             if (read.result && read.result.status === 200) record = read.result;
-            else writeDatabaseBody(transaction, key, record);
+            else writePersistentMessageBodyRecord(transaction, key, record);
           });
         };
       }
     }, function(error) {
-      var remaining = bodyWritesByYear.get(groupKey) - 1;
-      if (remaining) bodyWritesByYear.set(groupKey, remaining);
-      else bodyWritesByYear.delete(groupKey);
+      var remaining = messageBodyWritesByYear.get(groupKey) - 1;
+      if (remaining) messageBodyWritesByYear.set(groupKey, remaining);
+      else messageBodyWritesByYear.delete(groupKey);
       if (error) {
         if (isQuotaError(error)) quotaLimitedYears.add(groupKey);
         handleWriteError(error);
-        saveInSession();
+        saveInMemory();
       } else {
-        rememberSavedStatus(record, key);
-        sessionBodies.delete(key);
+        rememberPersistentMessageBodyStatus(record, key);
+        inMemoryMessageBodyRecordStore.delete(key);
         callback(record);
       }
     });
@@ -606,13 +607,13 @@ window.Navadmin.messageStore = (function() {
     messages: messages,
     findMessage: findMessage,
     mergeMetadata: mergeMetadata,
-    hasBodyText: hasBodyText,
+    hasMessageBodyText: hasMessageBodyText,
     canPersist: canPersist,
     setEvictionHandlers: setEvictionHandlers,
-    getBodyStatus: getBodyStatus,
-    bodyYears: bodyYears,
-    getBodyRecord: getBodyRecord,
-    listBodyRecords: listBodyRecords,
-    saveBodyResult: saveBodyResult
+    getMessageBodyStatus: getMessageBodyStatus,
+    messageBodyYears: messageBodyYears,
+    getMessageBodyRecord: getMessageBodyRecord,
+    listMessageBodyRecords: listMessageBodyRecords,
+    saveMessageBodyResult: saveMessageBodyResult
   };
 })();

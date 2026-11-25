@@ -7,7 +7,7 @@ var availableMsgTypes = [
 
 // Callbacks compare their selection object with the current one before changing the UI.
 var listSelection;
-var archiveSearch;
+var crossYearSearchState;
 var activeSearch;
 var searchInput;
 var searchSpinner;
@@ -26,7 +26,7 @@ var messageModalPhase = 'hidden';
 var loadingProgress;
 var msgModal;
 var msgModalTitle;
-var msgModalBody;
+var messageBodyContainer;
 var pageDescription;
 var listDescription;
 
@@ -37,22 +37,27 @@ $(document).ready(function() {
   loadingProgress = $('#loading-progress');
   searchInput = document.getElementById('msg-search-input');
   searchSpinner = document.getElementById('message-search-spinner');
-  msgModal = $('#msg-body-modal');
+  msgModal = $('#message-body-modal');
   msgModalTitle = msgModal.find('.modal-title');
-  msgModalBody = msgModal.find('.modal-body');
+  messageBodyContainer = msgModal.find('.modal-body');
   pageDescription = document.querySelector('meta[name="description"]');
   listDescription = pageDescription ? pageDescription.getAttribute('content') : '';
 
   var visits = parseInt(getCookie(COOKIE_VISITS), 10) || 0;
   setCookie(COOKIE_VISITS, visits + 1);
 
-  Navadmin.messageDownloads.init(messageDownloadChanged, messageYearEvicted, isOpenMessageYear);
-  Navadmin.messageSearch.init(function() {
+  Navadmin.messageDownloads.init(messageDownloadChanged, yearMessageBodiesEvicted, isOpenMessageYear);
+  Navadmin.messageSearch.init(function(fullMessage) {
+    var warmup = crossYearSearchState && crossYearSearchState.fuzzyWarmup;
+    if (!fullMessage && warmup && warmup.active) {
+      warmup.active = false;
+      crossYearSearchState.fuzzyWarmup = null;
+    }
     queueMessageFilterLayout();
     msgFilterSearchInputChanged(true);
   });
   Navadmin.onMessageMetadataChanged = function(type) {
-    if (activeSearch && activeSearch.type === type) refreshArchiveSearchSoon();
+    if (activeSearch && activeSearch.type === type) refreshCrossYearSearchSoon();
   };
   $('.message-filters').on('shown.bs.dropdown', function(event) {
     var menu = $(event.relatedTarget).next('.dropdown-menu')[0];
@@ -66,7 +71,9 @@ $(document).ready(function() {
   });
   $(window).on('resize', queueMessageFilterLayout);
   queueMessageFilterLayout();
-  $(searchInput).on('input keyup change', function() { msgFilterSearchInputChanged(true); });
+  $(searchInput).on('focus', warmCrossYearSearch).on('input keyup change', function(event) {
+    msgFilterSearchInputChanged(!event.originalEvent || event.originalEvent.isTrusted !== false);
+  });
   $(searchInput).on('paste cut', function() {
     window.setTimeout(function() { msgFilterSearchInputChanged(true); }, 0);
   });
@@ -299,13 +306,13 @@ function updateYearDownloadStatus(year, status) {
 /** Apply the same download progress styling and values to both displays. */
 function renderYearDownloadProgress(progress, status) {
   var count = status.completed + '/' + status.total;
-  var cacheNote = 'Cached in this tab until reload';
-  var description = count + ' downloaded' + (status.temporary ? '. ' + cacheNote : '');
+  var inMemoryNote = 'Available in the in-memory store until reload';
+  var description = count + ' downloaded' + (status.temporary ? '. ' + inMemoryNote : '');
   progress.toggleClass('message-year-progress-active', status.active)
     .toggleClass('message-year-progress-temporary', status.temporary).attr({
       'aria-valuenow': status.completed, 'aria-valuemax': status.total,
       'aria-valuetext': description,
-      title: status.temporary ? cacheNote : null
+      title: status.temporary ? inMemoryNote : null
     });
   progress.children('.message-year-progress-fill').toggleClass('bg-warning', status.temporary)
     .css('width', (100 * status.completed / status.total) + '%');
@@ -362,48 +369,48 @@ function searchRowKey(year, number) {
 
 function markRowOffline(entry) {
   entry.row[0].cells[0].classList.add('offline-enabled');
-  entry.message.offline = true;
+  entry.message.availableOffline = true;
 }
 
 function isOpenMessageYear(type, year) {
   return !!selectedMessage && selectedMessage.type === type && selectedMessage.year === year;
 }
 
-function hasSessionBody(type, year, number) {
-  var status = Navadmin.messageStore.getBodyStatus(type, year, number);
+function hasInMemoryMessageBody(type, year, number) {
+  var status = Navadmin.messageStore.getMessageBodyStatus(type, year, number);
   return status && status.status === 200 && !status.persistent;
 }
 
 /**
- * Refresh the affected year's storage indicators and searchable bodies after eviction.
+ * Refresh the affected year's storage indicators and searchable message bodies after eviction.
  * @param {MsgType} type The message type.
  * @param {number} year The evicted year.
- * @param {Object[]} movedRecords The bodies and download outcomes moved to memory.
+ * @param {Object[]} movedMessageBodyRecords The message body records moved to the in-memory store.
  */
-function messageYearEvicted(type, year, movedRecords) {
+function yearMessageBodiesEvicted(type, year, movedMessageBodyRecords) {
   if (!listSelection || listSelection.type !== type) return;
   queueYearDownloadStatus(type, year);
 
-  if (archiveSearch && archiveSearch.type === type) {
-    var read = archiveSearch.readingBodies;
+  if (crossYearSearchState && crossYearSearchState.type === type) {
+    var read = crossYearSearchState.readingMessageBodies;
     if (read && read.year === year) read.evicted = true;
-    var yearBodies = archiveSearch.bodies.get(year);
-    if (yearBodies) {
-      yearBodies.forEach(function(body, number) {
-        if (!hasSessionBody(type, year, number)) yearBodies.delete(number);
+    var messageBodiesForYear = crossYearSearchState.messageBodiesByYear.get(year);
+    if (messageBodiesForYear) {
+      messageBodiesForYear.forEach(function(messageBody, number) {
+        if (!hasInMemoryMessageBody(type, year, number)) messageBodiesForYear.delete(number);
       });
     }
-    movedRecords.forEach(function(record) {
-      if (record.status === 200) cacheSearchBody(archiveSearch, record, true);
+    movedMessageBodyRecords.forEach(function(messageBodyRecord) {
+      if (messageBodyRecord.status === 200) cacheSearchMessageBody(crossYearSearchState, messageBodyRecord, true);
     });
   }
 
   if (displayedRows) {
     displayedRows.forEach(function(entry) {
       var message = entry.message;
-      if (message.type === type && message.year === year && message.offline) {
+      if (message.type === type && message.year === year && message.availableOffline) {
         entry.row[0].cells[0].classList.remove('offline-enabled');
-        message.offline = false;
+        message.availableOffline = false;
       }
     });
   }
@@ -413,60 +420,63 @@ function messageYearEvicted(type, year, movedRecords) {
     var search = activeSearch;
     window.clearTimeout(search.timer);
     activeSearch = { type: search.type, query: search.query, fullMessage: search.fullMessage, matcher: search.matcher };
-    scheduleArchiveSearch(activeSearch, 0);
+    scheduleCrossYearSearch(activeSearch, 0);
   }
 }
 
-function messageDownloadChanged(type, year, record, metadataReady) {
+function messageDownloadChanged(type, year, messageBodyRecord, metadataLoadFinished) {
   if (!listSelection || listSelection.type !== type) {
     return;
   }
   queueYearDownloadStatus(type, year);
-  if (metadataReady && listSelection.displayedYear === year) {
+  if (metadataLoadFinished && listSelection.displayedYear === year) {
     refreshMessageTable(type, year, listSelection.showEmptyIfUnavailable);
   }
-  if (record && record.status === 200) {
-    var saved = Navadmin.messageStore.getBodyStatus(type, year, record.number);
+  if (messageBodyRecord && messageBodyRecord.status === 200) {
+    var saved = Navadmin.messageStore.getMessageBodyStatus(type, year, messageBodyRecord.number);
     if (saved && saved.status === 200 && saved.persistent) {
       if (displayedSearchRows) {
-        var result = displayedSearchRows.get(searchRowKey(year, record.number));
+        var result = displayedSearchRows.get(searchRowKey(year, messageBodyRecord.number));
         if (result) markRowOffline(result);
       } else if (listSelection.displayedYear === year && displayedRows) {
         for (var i = 0; i < displayedRows.length; i++) {
           var message = displayedRows[i].message;
-          if (message.type === type && message.year === year && message.number === record.number) {
+          if (message.type === type && message.year === year && message.number === messageBodyRecord.number) {
             markRowOffline(displayedRows[i]);
             break;
           }
         }
       }
     }
-    if (archiveSearch && archiveSearch.type === type &&
-        (Navadmin.messageSearch.isFullMessage() || archiveSearch.readBodyYears.has(year))) {
-      cacheSearchBody(archiveSearch, record);
+    if (crossYearSearchState && crossYearSearchState.type === type &&
+        (Navadmin.messageSearch.isFullMessage() || crossYearSearchState.requestedMessageBodyYears.has(year))) {
+      cacheSearchMessageBody(crossYearSearchState, messageBodyRecord);
     }
   }
-  if (record && record.status === 200 && Navadmin.messageSearch.isFullMessage()) {
-    refreshArchiveSearchSoon();
+  if (messageBodyRecord && messageBodyRecord.status === 200 && Navadmin.messageSearch.isFullMessage()) {
+    refreshCrossYearSearchSoon();
   }
 }
 
 /**
- * Display cached rows for the selection, refresh its metadata, and queue the year's bodies.
+ * Display cached rows for the selection, refresh its metadata, and queue the year's message bodies.
  * @param {MsgType} type The message type to display.
  * @param {number} year The year to display, or -1 for the latest available year.
  */
 function loadMessageList(type, year) {
   var selection = { type: type, year: year, displayedYear: -1 };
   listSelection = selection;
-  if (archiveSearch && archiveSearch.type !== type) {
-    archiveSearch = null;
+  if (crossYearSearchState && crossYearSearchState.type !== type) {
+    crossYearSearchState = null;
   }
   var listName = shortNameForMessage(type, year).trim();
   console.log('Loading the message list for ' + listName + '.');
-  setMessageFilterLabel($('#msg-type-dropdown'), msgTypeToString(type));
+  var messageTypeName = msgTypeToString(type);
+  setMessageFilterLabel($('#msg-type-dropdown'), messageTypeName);
+  searchInput.placeholder = 'Search ' + messageTypeName + ' messages across downloaded years';
   var displayedYear = setFilterMsgYearDropdown(type, year);
   var hasMessageList = refreshMessageTable(type, displayedYear);
+  if (document.activeElement === searchInput) warmCrossYearSearch();
   Navadmin.messageDownloads.queueYear(type, displayedYear, true);
   setUIInLoadingStatus(!hasMessageList, hasMessageList ? null : 'Getting available messages');
 
@@ -525,7 +535,7 @@ function setListTitle() {
 }
 
 /**
- * Update the selected year's rows or apply a changed archive search.
+ * Update the selected year's rows or apply a changed cross-year search.
  * @param {MsgType} msgType The message type to display.
  * @param {number} msgYear The resolved year to display.
  * @param {boolean} [showEmptyIfUnavailable] Show the empty row if the completed
@@ -539,7 +549,7 @@ function refreshMessageTable(msgType, msgYear, showEmptyIfUnavailable) {
     setListTitle();
   }
 
-  if (Navadmin.messageSearch.matcher(searchInput.value)) {
+  if (Navadmin.messageSearch.createLiteralMatcher(searchInput.value)) {
     msgFilterSearchInputChanged();
     return !!Navadmin.messageStore.messages(msgType, msgYear) || !!showEmptyIfUnavailable;
   }
@@ -643,14 +653,14 @@ function snapshotMessageRows(msgType, msgYear) {
 }
 
 function snapshotMessageRow(type, year, message) {
-  var cached = Navadmin.messageStore.getBodyStatus(type, year, message.number);
+  var cached = Navadmin.messageStore.getMessageBodyStatus(type, year, message.number);
   var row = {
     type: type,
     year: year,
     number: message.number,
     title: message.title || '',
     cancelled: !!message.cancelled,
-    offline: !!cached && cached.status === 200 && cached.persistent,
+    availableOffline: !!cached && cached.status === 200 && cached.persistent,
     stars: -1,
     views: -1
   };
@@ -672,7 +682,7 @@ function snapshotMessageRow(type, year, message) {
 function createMessageRow(message) {
   var row = $('<tr>').css('cursor', 'pointer').attr('msg-type', msgTypeToString(message.type));
   var number = $('<th>').text(shortNameForMessage(-1, message.year, message.number));
-  if (message.offline) {
+  if (message.availableOffline) {
     number.addClass('offline-enabled');
   }
 
@@ -708,51 +718,98 @@ function createMessageRow(message) {
   return row;
 }
 
-function cacheSearchBody(state, record, onlyIfMissing) {
-  var yearBodies = state.bodies.get(record.year);
-  if (!yearBodies) {
-    yearBodies = new Map();
-    state.bodies.set(record.year, yearBodies);
+function cacheSearchMessageBody(state, messageBodyRecord, onlyIfMissing) {
+  var messageBodiesForYear = state.messageBodiesByYear.get(messageBodyRecord.year);
+  if (!messageBodiesForYear) {
+    messageBodiesForYear = new Map();
+    state.messageBodiesByYear.set(messageBodyRecord.year, messageBodiesForYear);
   }
-  if (!onlyIfMissing || !yearBodies.has(record.number)) {
-    yearBodies.set(record.number, { text: record.body });
+  if (!onlyIfMissing || !messageBodiesForYear.has(messageBodyRecord.number)) {
+    messageBodiesForYear.set(messageBodyRecord.number, { text: messageBodyRecord.body });
   }
 }
 
+function getCrossYearSearchState() {
+  if (!crossYearSearchState) {
+    crossYearSearchState = {
+      type: listSelection.type,
+      messageBodiesByYear: new Map(),
+      requestedMessageBodyYears: new Set(),
+      requestedTitleYears: new Set()
+    };
+  }
+  return crossYearSearchState;
+}
+
+function getFuzzySearch(state, createFuzzySearch) {
+  if (!state.fuzzySearch) state.fuzzySearch = createFuzzySearch();
+  return state.fuzzySearch;
+}
+
+function warmCrossYearSearch() {
+  var createFuzzySearch = Navadmin.messageSearch.createFuzzySearch;
+  if (!listSelection || activeSearch || !createFuzzySearch || !Navadmin.messageSearch.isFullMessage()) return;
+  var state = getCrossYearSearchState();
+  if (state.fuzzyWarmup) return;
+
+  getFuzzySearch(state, createFuzzySearch);
+  state.fuzzyWarmup = { active: true };
+  if (!state.readingMessageBodies) warmFuzzyIndex(state);
+}
+
+function warmFuzzyIndex(state, messageBodies) {
+  var warmup = state.fuzzyWarmup;
+  if (!warmup.started) {
+    warmup.started = true;
+    messageBodies = crossYearSearchCandidates(state, true).map(function(candidate) { return candidate.messageBody; });
+  }
+  state.fuzzySearch.addMessageBodies(messageBodies, function() {
+    return crossYearSearchState === state && warmup.active;
+  }, function() {
+    loadCrossYearSearchMessageBodies(state);
+  });
+}
+
 /**
- * Read cached bodies one year at a time for the active Full Message search.
- * @param {Object} state The archive cache for the selected message type.
+ * Read cached message bodies one year at a time for Full Message search.
+ * @param {Object} state The cross-year search state for the selected message type.
  */
-function loadArchiveSearchBodies(state) {
-  if (state.readingBodies) {
+function loadCrossYearSearchMessageBodies(state) {
+  if (state.readingMessageBodies) {
     return;
   }
-  var year = Navadmin.messageStore.bodyYears(state.type).filter(function(candidate) {
-    return !state.readBodyYears.has(candidate);
+  var year = Navadmin.messageStore.messageBodyYears(state.type).filter(function(candidate) {
+    return !state.requestedMessageBodyYears.has(candidate);
   })[0];
   if (!year) {
+    if (state.fuzzyWarmup) state.fuzzyWarmup.active = false;
     return;
   }
   var read = { year: year, evicted: false };
-  state.readingBodies = read;
-  state.readBodyYears.add(year);
-  Navadmin.messageStore.listBodyRecords(state.type, year, function(records) {
-    state.readingBodies = null;
-    if (archiveSearch === state) {
-      records.forEach(function(record) {
-        if (record.status === 200 && (!read.evicted || hasSessionBody(state.type, year, record.number))) {
-          cacheSearchBody(state, record, true);
+  state.readingMessageBodies = read;
+  state.requestedMessageBodyYears.add(year);
+  Navadmin.messageStore.listMessageBodyRecords(state.type, year, function(messageBodyRecords) {
+    state.readingMessageBodies = null;
+    if (crossYearSearchState === state) {
+      messageBodyRecords.forEach(function(messageBodyRecord) {
+        if (messageBodyRecord.status === 200 &&
+            (!read.evicted || hasInMemoryMessageBody(state.type, year, messageBodyRecord.number))) {
+          cacheSearchMessageBody(state, messageBodyRecord, true);
         }
       });
-      refreshArchiveSearchSoon();
-      if (activeSearch && activeSearch.fullMessage) {
-        loadArchiveSearchBodies(state);
+      var needsMessageBodies = activeSearch && activeSearch.fullMessage;
+      if (needsMessageBodies) refreshCrossYearSearchSoon();
+      if (state.fuzzyWarmup && state.fuzzyWarmup.active) {
+        var messageBodiesForYear = state.messageBodiesByYear.get(year);
+        warmFuzzyIndex(state, messageBodiesForYear ? Array.from(messageBodiesForYear.values()) : []);
+      } else if (needsMessageBodies) {
+        loadCrossYearSearchMessageBodies(state);
       }
     }
   });
 }
 
-function loadArchiveSearchTitles(state) {
+function loadCrossYearSearchTitles(state) {
   if (state.readingTitles) {
     return;
   }
@@ -767,9 +824,9 @@ function loadArchiveSearchTitles(state) {
   missing.forEach(function(year) { state.requestedTitleYears.add(year); });
   getYearsForMsgType(state.type, missing, function() {
     state.readingTitles = false;
-    if (archiveSearch === state) {
+    if (crossYearSearchState === state) {
       missing.forEach(function(year) { queueYearDownloadStatus(state.type, year); });
-      if (activeSearch && !activeSearch.fullMessage) loadArchiveSearchTitles(state);
+      if (activeSearch && !activeSearch.fullMessage) loadCrossYearSearchTitles(state);
       hideSearchLoadingIndicatorWhenIdle();
     }
   }, true);
@@ -778,38 +835,38 @@ function loadArchiveSearchTitles(state) {
 function hideSearchLoadingIndicatorWhenIdle() {
   if (searchSpinner.hidden) return;
   var search = activeSearch;
-  var readingArchive = search && archiveSearch &&
-    (search.fullMessage ? archiveSearch.readingBodies : archiveSearch.readingTitles);
-  if (search && (search.timer || search.running || readingArchive)) return;
+  var loadingCrossYearSearch = search && crossYearSearchState &&
+    (search.fullMessage ? crossYearSearchState.readingMessageBodies : crossYearSearchState.readingTitles);
+  if (search && (search.timer || search.running || loadingCrossYearSearch)) return;
   searchSpinner.hidden = true;
 }
 
-function refreshArchiveSearchSoon() {
+function refreshCrossYearSearchSoon() {
   if (activeSearch) {
     activeSearch.needsRefresh = true;
-    scheduleArchiveSearch(activeSearch, 220);
+    scheduleCrossYearSearch(activeSearch, 220);
   }
 }
 
-function scheduleArchiveSearch(search, delay) {
+function scheduleCrossYearSearch(search, delay) {
   if (search.timer || search.running) {
     return;
   }
   search.timer = window.setTimeout(function() {
     search.timer = null;
     if (activeSearch === search) {
-      runArchiveSearch(search);
+      runCrossYearSearch(search);
     }
   }, delay);
 }
 
-function archiveSearchCandidates(state, fullMessage) {
+function crossYearSearchCandidates(state, fullMessage) {
   var store = Navadmin.messageStore;
   var candidates = [];
   if (fullMessage) {
-    state.bodies.forEach(function(bodies, year) {
-      bodies.forEach(function(body, number) {
-        candidates.push({ year: year, number: number, body: body });
+    state.messageBodiesByYear.forEach(function(messageBodiesForYear, year) {
+      messageBodiesForYear.forEach(function(messageBody, number) {
+        candidates.push({ year: year, number: number, messageBody: messageBody });
       });
     });
   } else {
@@ -825,14 +882,14 @@ function archiveSearchCandidates(state, fullMessage) {
   return candidates;
 }
 
-function archiveSearchRow(search, candidate, metadataByYear) {
+function crossYearSearchResult(search, candidate, metadataByYear, fuzzyMatches) {
   var message = candidate.message;
   if (!search.fullMessage) {
-    return search.matcher.test(message.title || '') ? snapshotMessageRow(search.type, candidate.year, message) : null;
+    return search.matcher.test(message.title || '') ? { message: snapshotMessageRow(search.type, candidate.year, message) } : null;
   }
 
-  var snippet = Navadmin.messageSearch.cachedBodySnippet(candidate.body, search.matcher);
-  if (!snippet) {
+  var match = Navadmin.messageSearch.matchMessageBody(candidate.messageBody, search.matcher, fuzzyMatches);
+  if (!match) {
     return null;
   }
 
@@ -846,24 +903,27 @@ function archiveSearchRow(search, candidate, metadataByYear) {
   }
   message = messages.get(candidate.number) || { number: candidate.number };
   var row = snapshotMessageRow(search.type, candidate.year, message);
-  row.snippet = snippet;
-  return row;
+  row.snippet = match.snippet;
+  return { message: row, fuzzyScore: match.fuzzyScore };
 }
 
-function runArchiveSearch(search) {
+function runCrossYearSearch(search) {
   search.running = true;
   search.needsRefresh = false;
+  var state = crossYearSearchState;
+  if (state.fuzzyWarmup) state.fuzzyWarmup.active = false;
   if (search.fullMessage) {
-    loadArchiveSearchBodies(archiveSearch);
+    loadCrossYearSearchMessageBodies(state);
   } else {
-    loadArchiveSearchTitles(archiveSearch);
+    loadCrossYearSearchTitles(state);
   }
 
-  var candidates = archiveSearchCandidates(archiveSearch, search.fullMessage);
+  var candidates = crossYearSearchCandidates(state, search.fullMessage);
   var metadataByYear = new Map();
   var rows = [];
   var rowIndex = new Map();
   var position = 0;
+  var fuzzyMatches;
   function scanBatch() {
     if (activeSearch !== search) {
       return;
@@ -873,13 +933,15 @@ function runArchiveSearch(search) {
     do {
       var candidate = candidates[position++];
       if (!candidate) break;
-      var message = archiveSearchRow(search, candidate, metadataByYear);
-      if (message) {
+      var result = crossYearSearchResult(search, candidate, metadataByYear, fuzzyMatches);
+      if (result) {
+        var message = result.message;
         var key = searchRowKey(candidate.year, candidate.number);
         var entry = displayedSearchRows && displayedSearchRows.get(key);
         if (!entry || JSON.stringify(entry.message) !== JSON.stringify(message)) {
           entry = { message: message, row: createMessageRow(message) };
         }
+        entry.fuzzyScore = result.fuzzyScore;
         rows.push(entry);
         rowIndex.set(key, entry);
       }
@@ -891,21 +953,36 @@ function runArchiveSearch(search) {
     }
     if (search.fullMessage) {
       rows.sort(function(a, b) {
-        return b.message.year - a.message.year || b.message.number - a.message.number;
+        if (!a.fuzzyScore && b.fuzzyScore) return -1;
+        if (a.fuzzyScore && !b.fuzzyScore) return 1;
+        return b.fuzzyScore - a.fuzzyScore || b.message.year - a.message.year || b.message.number - a.message.number;
       });
     }
-    showArchiveSearchRows(rows, rowIndex);
+    showCrossYearSearchRows(rows, rowIndex);
     search.running = false;
     if (search.needsRefresh) {
-      scheduleArchiveSearch(search, 220);
+      scheduleCrossYearSearch(search, 220);
     } else {
       hideSearchLoadingIndicatorWhenIdle();
     }
   }
-  scanBatch();
+  var createFuzzySearch = search.fullMessage && Navadmin.messageSearch.createFuzzySearch;
+  search.createFuzzySearch = createFuzzySearch;
+  if (createFuzzySearch) {
+    var fuzzySearch = getFuzzySearch(state, createFuzzySearch);
+    var messageBodies = candidates.map(function(candidate) { return candidate.messageBody; });
+    fuzzySearch.search(search.query, messageBodies, function() {
+      return activeSearch === search;
+    }, function(matches) {
+      fuzzyMatches = matches;
+      scanBatch();
+    });
+  } else {
+    scanBatch();
+  }
 }
 
-function showArchiveSearchRows(rows, rowIndex) {
+function showCrossYearSearchRows(rows, rowIndex) {
   var table = document.getElementById('msg-list-table-body');
   var focusedMessage = findFocusedMessage(table);
   if (!displayedSearchRows || !rows.length) {
@@ -925,8 +1002,8 @@ function showArchiveSearchRows(rows, rowIndex) {
       previousRow = previousRow.nextElementSibling;
     } else {
       var message = entry.message;
-      if (!message.offline) {
-        var saved = Navadmin.messageStore.getBodyStatus(message.type, message.year, message.number);
+      if (!message.availableOffline) {
+        var saved = Navadmin.messageStore.getMessageBodyStatus(message.type, message.year, message.number);
         if (saved && saved.status === 200 && saved.persistent) markRowOffline(entry);
       }
       fragment.appendChild(row);
@@ -942,8 +1019,8 @@ function showArchiveSearchRows(rows, rowIndex) {
 }
 
 /**
- * Filter the selected message type across years with a case-insensitive literal match.
- * Full Message searches cached bodies and Title Only searches subjects.
+ * Filter the selected message type across years, showing literal matches first.
+ * Full Message searches cached message bodies and Title Only searches subjects.
  * Clearing the query restores the selected year's list.
  * @param {boolean} [userInitiated] Show the header spinner for changes made through the search controls.
  */
@@ -953,8 +1030,12 @@ function msgFilterSearchInputChanged(userInitiated) {
   }
   var query = searchInput.value;
   var fullMessage = Navadmin.messageSearch.isFullMessage();
+  var createFuzzySearch = fullMessage && Navadmin.messageSearch.createFuzzySearch;
   if (activeSearch && activeSearch.query === query && activeSearch.fullMessage === fullMessage &&
       activeSearch.type === listSelection.type) {
+    if (createFuzzySearch && activeSearch.createFuzzySearch !== createFuzzySearch) {
+      refreshCrossYearSearchSoon();
+    }
     return;
   }
   var previousSearch = activeSearch;
@@ -963,23 +1044,22 @@ function msgFilterSearchInputChanged(userInitiated) {
     if (previousSearch.type !== listSelection.type && displayedSearchRows) renderMessageRows(null);
   }
   activeSearch = null;
-  var matcher = Navadmin.messageSearch.matcher(query);
+  var matcher = Navadmin.messageSearch.createLiteralMatcher(query);
   if (!userInitiated || !matcher) {
     hideSearchLoadingIndicatorWhenIdle();
   }
   if (!matcher) {
-    if (archiveSearch) archiveSearch.requestedTitleYears.clear();
+    if (crossYearSearchState) crossYearSearchState.requestedTitleYears.clear();
     if (previousSearch || displayedSearchRows) {
       refreshMessageTable(listSelection.type, listSelection.displayedYear, listSelection.showEmptyIfUnavailable);
     }
+    if (document.activeElement === searchInput) warmCrossYearSearch();
     return;
   }
-  if (!archiveSearch) {
-    archiveSearch = { type: listSelection.type, bodies: new Map(), readBodyYears: new Set(), requestedTitleYears: new Set() };
-  }
+  getCrossYearSearchState();
   activeSearch = { type: listSelection.type, query: query, fullMessage: fullMessage, matcher: matcher };
   if (userInitiated) searchSpinner.hidden = false;
-  scheduleArchiveSearch(activeSearch, 140);
+  scheduleCrossYearSearch(activeSearch, 140);
 }
 
 /**
@@ -1034,7 +1114,7 @@ function prepareAndShowMessageModal(type, year, number, row) {
 }
 
 /**
- * Show the message modal and fetch its metadata and body as needed.
+ * Show the message modal and fetch the message metadata and message body as needed.
  * @param {MsgType} type The message type to display.
  * @param {number} year The message year.
  * @param {number} number The message number.
@@ -1057,7 +1137,7 @@ function showMessage(type, year, number, depth, row, opener) {
     'class': 'spinner-border spinner-border-sm mr-2',
     'aria-hidden': 'true'
   });
-  msgModalBody.empty().append(spinner, document.createTextNode('Retrieving message\u2026'));
+  messageBodyContainer.empty().append(spinner, document.createTextNode('Retrieving message\u2026'));
   if (messageModalPhase === 'hidden') {
     msgModal.modal('show');
   }
@@ -1074,21 +1154,21 @@ function showMessage(type, year, number, depth, row, opener) {
     });
   }
 
-  getMsgBody(type, year, number, function(body, errorText) {
+  getMessageBody(type, year, number, function(messageBody, errorText) {
     if (row) {
       row.css('cursor', 'pointer');
     }
 
     if (selectedMessage !== message) {
-      console.log('Ignoring the body result for ' + messageName + ' because the modal selection changed.');
+      console.log('Ignoring the message body for ' + messageName + ' because the modal selection changed.');
       return;
     }
 
     setMessageTitle(message);
-    if (!body) {
+    if (!messageBody) {
       var messageError = errorText || 'Message not found.';
       console.log('Could not display ' + messageName + '. ' + messageError);
-      msgModalBody.text(messageError);
+      messageBodyContainer.text(messageError);
       return;
     }
     var messageText = $('<textarea>', {
@@ -1098,8 +1178,8 @@ function showMessage(type, year, number, depth, row, opener) {
       'rows': 12,
       'wrap': 'soft'
     });
-    messageText[0].defaultValue = body;
-    msgModalBody.empty().append(messageText);
+    messageText[0].defaultValue = messageBody;
+    messageBodyContainer.empty().append(messageText);
 
     if (typeof analytics !== 'undefined') {
       analytics.logEvent('ViewedMessage', { messageNumber: messageName });

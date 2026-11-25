@@ -3,7 +3,7 @@ var server = 'https://navadmin-server.runs.io';
 // Only successful metadata and broadcast requests have a cooldown.
 var serverRequestCooldownSeconds = 600;
 var backgroundRequestTimeout = 15000;
-var unavailableBodyRetryMs = 60 * 60 * 1000;
+var unavailableMessageBodyRetryMs = 60 * 60 * 1000;
 var requestThrottleByKey = new Map();
 var pendingCallbacksByRequestKey = new Map();
 
@@ -155,9 +155,9 @@ function getYearsForMsgType(msgType, yearsToGetMetadata, completionHandler, back
 }
 
 // A 404 may be temporary. Keep it in the completion count and check it again on a later visit.
-function isCurrentBodyRecord(record) {
+function isCurrentMessageBodyRecord(record) {
   return record && (record.status === 200 ||
-    (record.status === 404 && Date.now() - record.savedAt < unavailableBodyRetryMs));
+    (record.status === 404 && Date.now() - record.savedAt < unavailableMessageBodyRetryMs));
 }
 
 /**
@@ -166,35 +166,35 @@ function isCurrentBodyRecord(record) {
  * @param {MsgType} msgType The message type.
  * @param {number} msgYear The message year.
  * @param {number} msgNumber The message number.
- * @param {function} [completionHandler] Receives (body, errorText, result).
- *   The body is null on failure and the error text is null on success.
- *   The result contains the HTTP status, or 0 for an empty body or missing HTTP response.
+ * @param {function} [completionHandler] Receives (messageBody, errorText, result).
+ *   The message body is null on failure and the error text is null on success.
+ *   The result contains the HTTP status, or 0 for an empty message body or missing HTTP response.
  * @param {boolean} [background] Apply the background timeout to a new request and skip the global loading indicator.
  */
-function getMsgBody(msgType, msgYear, msgNumber, completionHandler, background) {
+function getMessageBody(msgType, msgYear, msgNumber, completionHandler, background) {
   var postData = messageBodyKey(msgType, msgYear, msgNumber);
   var unavailable = 'Message text is not publicly released.';
   if (!startMessageRequest(postData, completionHandler)) {
     return;
   }
 
-  function finish(body, status, errorText) {
-    finishMessageRequest(postData, [body, errorText, { status: status }]);
+  function finish(messageBody, status, errorText) {
+    finishMessageRequest(postData, [messageBody, errorText, { status: status }]);
   }
 
   function finishWithRecord(record) {
     finish(record.body, record.status, record.status === 404 ? unavailable : null);
   }
 
-  function saveResult(body, status) {
-    Navadmin.messageStore.saveBodyResult(msgType, msgYear, msgNumber, body, status, function(record) {
+  function saveResult(messageBody, status) {
+    Navadmin.messageStore.saveMessageBodyResult(msgType, msgYear, msgNumber, messageBody, status, function(record) {
       Navadmin.messageDownloads.recordAvailable(record);
       finishWithRecord(record);
     });
   }
 
-  Navadmin.messageStore.getBodyRecord(msgType, msgYear, msgNumber, function(record) {
-    if (isCurrentBodyRecord(record) || (record && window.navigator.onLine === false)) {
+  Navadmin.messageStore.getMessageBodyRecord(msgType, msgYear, msgNumber, function(record) {
+    if (isCurrentMessageBodyRecord(record) || (record && window.navigator.onLine === false)) {
       finishWithRecord(record);
       return;
     }
@@ -207,7 +207,7 @@ function getMsgBody(msgType, msgYear, msgNumber, completionHandler, background) 
       global: !background,
       timeout: background ? backgroundRequestTimeout : 0
     }).done(function(data) {
-      if (Navadmin.messageStore.hasBodyText(data)) {
+      if (Navadmin.messageStore.hasMessageBodyText(data)) {
         saveResult(data, 200);
       } else {
         finish(null, 0, 'Message not found.');

@@ -5,8 +5,8 @@
   var evictedYears = new Set();
   var preferredKey;
   var activeMetadataJob;
-  var bodiesInProgress = 0;
-  var maxConcurrentBodies = 4;
+  var messageBodiesInProgress = 0;
+  var maxConcurrentMessageBodies = 4;
   var onChange;
   var pumping = false;
 
@@ -24,9 +24,9 @@
     return job;
   }
 
-  function changed(job, record, metadataReady) {
+  function changed(job, record, metadataLoadFinished) {
     if (onChange) {
-      onChange(job.type, job.year, record, metadataReady);
+      onChange(job.type, job.year, record, metadataLoadFinished);
     }
   }
 
@@ -42,40 +42,40 @@
     }
     var total = messages ? 0 : null;
     var completed = 0;
-    var hasSessionBodies = false;
+    var hasInMemoryMessageBodyOutcomes = false;
     if (messages) {
       messages.forEach(function(message) {
         if (message) {
           total++;
-          var status = store.getBodyStatus(type, year, message.number);
+          var status = store.getMessageBodyStatus(type, year, message.number);
           if (status) {
             completed++;
-            hasSessionBodies = hasSessionBodies || !status.persistent;
+            hasInMemoryMessageBodyOutcomes = hasInMemoryMessageBodyOutcomes || !status.persistent;
           }
         }
       });
     }
     var incomplete = completed !== total;
-    var hasBodyWork = !!job && (job.active.size > 0 || job.pending.length > 0);
+    var hasMessageBodyWork = !!job && (job.active.size > 0 || job.pending.length > 0);
     var reason = null;
     if (job && incomplete) {
       if (offline()) {
         reason = 'Offline';
-      } else if (!hasBodyWork && !job.metadataQueued && activeMetadataJob !== job) {
+      } else if (!hasMessageBodyWork && !job.metadataQueued && activeMetadataJob !== job) {
         reason = job.metadataError || (job.failed.size ? 'Select year to retry' : null);
       }
     }
     return {
       total: total,
       completed: completed,
-      temporary: hasSessionBodies || (!!job && incomplete && !store.canPersist(type, year)),
+      temporary: hasInMemoryMessageBodyOutcomes || (!!job && incomplete && !store.canPersist(type, year)),
       requested: !!job,
-      active: hasBodyWork && job.started === true && !reason,
+      active: hasMessageBodyWork && job.started === true && !reason,
       reason: reason
     };
   }
 
-  function refreshPendingBodies(job) {
+  function refreshPendingMessageBodies(job) {
     job.pending = [];
     if (evictedYears.has(yearKey(job.type, job.year))) return;
     var messages = store.messages(job.type, job.year) || [];
@@ -84,7 +84,7 @@
       if (!message) return;
       var number = message.number;
       if (!job.active.has(number) && !job.failed.has(number) &&
-          !isCurrentBodyRecord(store.getBodyStatus(job.type, job.year, number))) {
+          !isCurrentMessageBodyRecord(store.getMessageBodyStatus(job.type, job.year, number))) {
         job.pending.push(number);
       }
     });
@@ -112,22 +112,22 @@
       activeMetadataJob = null;
       job.metadataError = !store.messages(job.type, job.year) ?
         (result.errorText || 'Message list unavailable') : null;
-      refreshPendingBodies(job);
+      refreshPendingMessageBodies(job);
       changed(job, null, true);
       pump();
     }, true);
   }
 
-  function downloadBody(job, number) {
+  function downloadMessageBody(job, number) {
     job.started = true;
     job.active.add(number);
-    bodiesInProgress++;
+    messageBodiesInProgress++;
     if (job.active.size === 1) {
       changed(job);
     }
-    getMsgBody(job.type, job.year, number, function(body, errorText, result) {
+    getMessageBody(job.type, job.year, number, function(messageBody, errorText, result) {
       job.active.delete(number);
-      bodiesInProgress--;
+      messageBodiesInProgress--;
       if (result.status !== 200 && result.status !== 404) {
         job.failed.add(number);
       }
@@ -146,10 +146,10 @@
       while (!activeMetadataJob && (job = nextJob(needsMetadata))) {
         loadMetadata(job);
       }
-      while (bodiesInProgress < maxConcurrentBodies && (job = nextJob(hasPendingBodies))) {
+      while (messageBodiesInProgress < maxConcurrentMessageBodies && (job = nextJob(hasPendingMessageBodies))) {
         var number = job.pending.pop();
-        if (!isCurrentBodyRecord(store.getBodyStatus(job.type, job.year, number))) {
-          downloadBody(job, number);
+        if (!isCurrentMessageBodyRecord(store.getMessageBodyStatus(job.type, job.year, number))) {
+          downloadMessageBody(job, number);
         }
       }
     } finally {
@@ -161,7 +161,7 @@
     return job.metadataQueued;
   }
 
-  function hasPendingBodies(job) {
+  function hasPendingMessageBodies(job) {
     return job.pending.length > 0;
   }
 
@@ -175,7 +175,7 @@
       if (userSelection) {
         job.failed.clear();
       }
-      refreshPendingBodies(job);
+      refreshPendingMessageBodies(job);
       changed(job);
     }
     pump();
@@ -188,7 +188,7 @@
         evictedYears.delete(yearKey(type, year));
         job.failed.clear();
         job.metadataQueued = activeMetadataJob !== job;
-        refreshPendingBodies(job);
+        refreshPendingMessageBodies(job);
         changed(job);
       }
     });
@@ -208,7 +208,7 @@
         var job = jobs.get(key);
         // Keep automatic retries from refilling the space freed by this eviction.
         if (key === preferredKey) {
-          if (job) refreshPendingBodies(job);
+          if (job) refreshPendingMessageBodies(job);
         } else {
           evictedYears.add(key);
           if (job) {
@@ -229,7 +229,7 @@
           if (job.metadataError && activeMetadataJob !== job) {
             job.metadataQueued = true;
           }
-          refreshPendingBodies(job);
+          refreshPendingMessageBodies(job);
           changed(job);
         });
         pump();

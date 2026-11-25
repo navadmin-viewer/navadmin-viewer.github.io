@@ -197,6 +197,16 @@ footer {
   font-size: .75rem;
 }
 
+#msg-year-dropdown-progress {
+  position: absolute;
+  right: .3rem;
+  bottom: .2rem;
+  left: .3rem;
+  width: auto;
+  height: .25rem;
+  pointer-events: none;
+}
+
 .message-year-progress-fill {
   position: absolute;
   top: 0;
@@ -236,6 +246,16 @@ footer {
 .message-year-complete {
   color: #197540;
   font-weight: bold;
+}
+
+#msg-year-dropdown-complete {
+  margin-left: .25em;
+}
+
+#msg-year-dropdown:hover #msg-year-dropdown-complete,
+#msg-year-dropdown:active #msg-year-dropdown-complete,
+#msg-year-dropdown[aria-expanded="true"] #msg-year-dropdown-complete {
+  color: inherit;
 }
 
 .message-year-download-note {

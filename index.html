@@ -63,10 +63,16 @@
           </div>
         </div>
         <div class="input-group-prepend dropdown">
-          <button class="btn btn-outline-secondary dropdown-toggle" id="msg-year-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">N/A</button>
+          <button class="btn btn-outline-secondary dropdown-toggle" id="msg-year-dropdown" type="button" data-toggle="dropdown"
+            aria-haspopup="true" aria-expanded="false" aria-describedby="msg-year-dropdown-progress-description">
+            <span id="msg-year-dropdown-label">N/A</span><span class="message-year-complete" id="msg-year-dropdown-complete"
+              aria-hidden="true" title="Download complete" hidden>&#10003;</span>
+            <span class="message-year-progress" id="msg-year-dropdown-progress" aria-hidden="true" hidden><span class="message-year-progress-fill"></span></span>
+          </button>
           <div class="dropdown-menu" id="msg-year-dropdown-menu">
             <!-- <a class="dropdown-item" href="#">Latest year</a> -->
           </div>
+          <span class="sr-only" id="msg-year-dropdown-progress-description"></span>
         </div>
         <div class="input-group-prepend dropdown">
           <button class="btn btn-outline-secondary dropdown-toggle" id="msg-search-scope-dropdown" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" aria-controls="msg-search-scope-menu" aria-label="Search scope: Full Message">
@@ -80,7 +86,7 @@
           </div>
         </div>
       </div>
-      <input type="text" class="form-control" id="msg-search-input" placeholder="Search downloaded messages" aria-label="Search messages">
+      <input type="text" class="form-control" id="msg-search-input" placeholder="Search all downloaded messages" aria-label="Search messages">
     </div>
   </nav>
   <div class="container-fluid" id="main-container">
@@ -92,7 +98,9 @@
         <thead>
           <tr>
             <th scope="col">#</th>
-            <th scope="col">Title</th>
+            <th scope="col" aria-label="Title">Title
+              <span class="spinner-border spinner-border-sm" id="message-search-spinner" role="status" hidden><span class="sr-only">Searching messages</span></span>
+            </th>
             <th scope="col"></th>
           </tr>
         </thead>

@@ -10,7 +10,7 @@ var listSelection;
 var archiveSearch;
 var activeSearch;
 var searchInput;
-var searchLoadingRow;
+var searchSpinner;
 var displayedSearchRows;
 var pendingYearStatus = new Map();
 var yearStatusTimer;
@@ -36,12 +36,7 @@ $(document).ready(function() {
 
   loadingProgress = $('#loading-progress');
   searchInput = document.getElementById('msg-search-input');
-  searchLoadingRow = $('<tr>', { id: 'message-search-loading-row' }).append(
-    $('<td>'),
-    $('<td>').append($('<span>', { 'class': 'spinner-border spinner-border-sm', role: 'status' })
-      .append($('<span>', { 'class': 'sr-only', text: 'Searching messages' }))),
-    $('<td>')
-  )[0];
+  searchSpinner = document.getElementById('message-search-spinner');
   msgModal = $('#msg-body-modal');
   msgModalTitle = msgModal.find('.modal-title');
   msgModalBody = msgModal.find('.modal-body');
@@ -63,7 +58,8 @@ $(document).ready(function() {
     var menu = $(event.relatedTarget).next('.dropdown-menu')[0];
     if (menu && menu.id === 'msg-year-dropdown-menu' && listSelection) {
       $(menu).find('[data-message-year]').each(function() {
-        updateYearDownloadStatus(listSelection.type, Number(this.getAttribute('data-message-year')));
+        var year = Number(this.getAttribute('data-message-year'));
+        updateYearDownloadStatus(year, Navadmin.messageDownloads.progress(listSelection.type, year));
       });
     }
     fitMessageFilterMenu(menu);
@@ -215,7 +211,8 @@ function setFilterMsgYearDropdown(type, year) {
   var years = Navadmin.messageStore.years(type).filter(function(availableYear) { return availableYear > 0; });
   var displayedYear = year > 0 ? year : Navadmin.messageStore.latestYear(type);
   var button = $('#msg-year-dropdown');
-  setMessageFilterLabel(button, displayedYear > 0 ? String(displayedYear) : 'N/A');
+  setMessageFilterLabel($('#msg-year-dropdown-label'), displayedYear > 0 ? String(displayedYear) : 'N/A');
+  updateSelectedYearDownloadStatus(Navadmin.messageDownloads.progress(type, displayedYear));
   var menuKey = type + '/' + years.join(',');
   if (menu.data('messageYearMenuKey') === menuKey) {
     return displayedYear;
@@ -232,7 +229,7 @@ function setFilterMsgYearDropdown(type, year) {
       $('<span>', { 'class': 'message-year-label' }).text(availableYear),
       $('<span>', { 'class': 'message-year-status' }).hide()
     );
-    updateYearDownloadStatus(type, availableYear);
+    updateYearDownloadStatus(availableYear, Navadmin.messageDownloads.progress(type, availableYear));
   });
   menu.append($('<div>', { 'class': 'dropdown-divider' }), $('<button>', {
     'class': 'dropdown-item', id: 'msg-download-all-years', type: 'button'
@@ -250,13 +247,16 @@ function setFilterMsgYearDropdown(type, year) {
   return displayedYear;
 }
 
+function isYearDownloadComplete(status) {
+  return !!status && status.completed === status.total && !status.temporary;
+}
+
 /** Update a year's download indicator without replacing its link. */
-function updateYearDownloadStatus(type, year) {
+function updateYearDownloadStatus(year, status) {
   var indicator = $('#msg-year-dropdown-menu [data-message-year="' + year + '"] .message-year-status');
   if (!indicator.length) {
     return;
   }
-  var status = Navadmin.messageDownloads.progress(type, year);
   var previous = indicator.data('downloadStatus');
   if (!status) {
     if (previous) indicator.removeData('downloadStatus').empty().hide();
@@ -270,7 +270,7 @@ function updateYearDownloadStatus(type, year) {
   indicator.data('downloadStatus', status);
   var progress = indicator.children('.message-year-progress');
   indicator.children().not(progress).remove();
-  if (status.completed === status.total && !status.temporary) {
+  if (isYearDownloadComplete(status)) {
     progress.remove();
     indicator.append($('<span>', {
       'class': 'message-year-complete', title: 'Download complete', role: 'img', 'aria-label': 'Download complete'
@@ -285,17 +285,7 @@ function updateYearDownloadStatus(type, year) {
         $('<span>', { 'class': 'message-year-progress-count' })
       ).appendTo(indicator);
     }
-    var count = status.completed + '/' + status.total;
-    var cacheNote = 'Cached in this tab until reload';
-    progress.toggleClass('message-year-progress-active', status.active)
-      .toggleClass('message-year-progress-temporary', status.temporary).attr({
-        'aria-valuenow': status.completed, 'aria-valuemax': status.total,
-        'aria-valuetext': count + ' downloaded' + (status.temporary ? '. ' + cacheNote : ''),
-        title: status.temporary ? cacheNote : null
-      });
-    progress.children('.message-year-progress-fill').toggleClass('bg-warning', status.temporary)
-      .css('width', (100 * status.completed / status.total) + '%');
-    progress.children('.message-year-progress-count').text(count);
+    renderYearDownloadProgress(progress, status);
   } else {
     progress.remove();
   }
@@ -306,6 +296,46 @@ function updateYearDownloadStatus(type, year) {
   indicator.toggle(indicator.children().length > 0);
 }
 
+/** Apply the same download progress styling and values to both displays. */
+function renderYearDownloadProgress(progress, status) {
+  var count = status.completed + '/' + status.total;
+  var cacheNote = 'Cached in this tab until reload';
+  var description = count + ' downloaded' + (status.temporary ? '. ' + cacheNote : '');
+  progress.toggleClass('message-year-progress-active', status.active)
+    .toggleClass('message-year-progress-temporary', status.temporary).attr({
+      'aria-valuenow': status.completed, 'aria-valuemax': status.total,
+      'aria-valuetext': description,
+      title: status.temporary ? cacheNote : null
+    });
+  progress.children('.message-year-progress-fill').toggleClass('bg-warning', status.temporary)
+    .css('width', (100 * status.completed / status.total) + '%');
+  progress.children('.message-year-progress-count').text(count);
+  return description;
+}
+
+/** Show the selected year's progress or completion within the year button. */
+function updateSelectedYearDownloadStatus(status) {
+  var progress = $('#msg-year-dropdown-progress');
+  var checkmark = $('#msg-year-dropdown-complete');
+  var complete = isYearDownloadComplete(status);
+  var hideCheckmark = !complete;
+  var showProgress = !!status && !complete && status.total > 0 && (status.requested || status.completed > 0);
+  var description = complete ? 'Download complete' : '';
+  if (showProgress) {
+    description = renderYearDownloadProgress(progress, status);
+    if (status.reason) description += '. ' + status.reason;
+  } else {
+    progress.removeClass('message-year-progress-active message-year-progress-temporary')
+      .removeAttr('aria-valuenow aria-valuemax aria-valuetext title');
+  }
+  progress.prop('hidden', !showProgress);
+  if (checkmark.prop('hidden') !== hideCheckmark) {
+    checkmark.prop('hidden', hideCheckmark);
+    queueMessageFilterLayout();
+  }
+  $('#msg-year-dropdown-progress-description').text(description);
+}
+
 function queueYearDownloadStatus(type, year) {
   pendingYearStatus.set(year, type);
   if (!yearStatusTimer) {
@@ -313,7 +343,11 @@ function queueYearDownloadStatus(type, year) {
       yearStatusTimer = null;
       pendingYearStatus.forEach(function(messageType, messageYear) {
         if (listSelection.type === messageType) {
-          updateYearDownloadStatus(messageType, messageYear);
+          var status = Navadmin.messageDownloads.progress(messageType, messageYear);
+          updateYearDownloadStatus(messageYear, status);
+          if (listSelection.displayedYear === messageYear) {
+            updateSelectedYearDownloadStatus(status);
+          }
         }
       });
       pendingYearStatus.clear();
@@ -742,12 +776,12 @@ function loadArchiveSearchTitles(state) {
 }
 
 function hideSearchLoadingIndicatorWhenIdle() {
-  if (!searchLoadingRow.parentNode) return;
+  if (searchSpinner.hidden) return;
   var search = activeSearch;
   var readingArchive = search && archiveSearch &&
     (search.fullMessage ? archiveSearch.readingBodies : archiveSearch.readingTitles);
   if (search && (search.timer || search.running || readingArchive)) return;
-  searchLoadingRow.parentNode.removeChild(searchLoadingRow);
+  searchSpinner.hidden = true;
 }
 
 function refreshArchiveSearchSoon() {
@@ -875,7 +909,7 @@ function showArchiveSearchRows(rows, rowIndex) {
   var table = document.getElementById('msg-list-table-body');
   var focusedMessage = findFocusedMessage(table);
   if (!displayedSearchRows || !rows.length) {
-    $(table).children().not(searchLoadingRow).remove();
+    $(table).empty();
   } else {
     displayedSearchRows.forEach(function(entry, key) {
       if (rowIndex.get(key) !== entry) entry.row.remove();
@@ -883,7 +917,6 @@ function showArchiveSearchRows(rows, rowIndex) {
   }
 
   var previousRow = table.firstElementChild;
-  if (previousRow === searchLoadingRow) previousRow = previousRow.nextElementSibling;
   var fragment = document.createDocumentFragment();
   rows.forEach(function(entry) {
     var row = entry.row[0];
@@ -912,7 +945,7 @@ function showArchiveSearchRows(rows, rowIndex) {
  * Filter the selected message type across years with a case-insensitive literal match.
  * Full Message searches cached bodies and Title Only searches subjects.
  * Clearing the query restores the selected year's list.
- * @param {boolean} [userInitiated] Show a loading row for changes made through the search controls.
+ * @param {boolean} [userInitiated] Show the header spinner for changes made through the search controls.
  */
 function msgFilterSearchInputChanged(userInitiated) {
   if (!listSelection) {
@@ -945,10 +978,7 @@ function msgFilterSearchInputChanged(userInitiated) {
     archiveSearch = { type: listSelection.type, bodies: new Map(), readBodyYears: new Set(), requestedTitleYears: new Set() };
   }
   activeSearch = { type: listSelection.type, query: query, fullMessage: fullMessage, matcher: matcher };
-  if (userInitiated && !searchLoadingRow.parentNode) {
-    var table = document.getElementById('msg-list-table-body');
-    table.insertBefore(searchLoadingRow, table.firstChild);
-  }
+  if (userInitiated) searchSpinner.hidden = false;
   scheduleArchiveSearch(activeSearch, 140);
 }
 

@@ -7,6 +7,20 @@ const host = '127.0.0.1';
 const requests = [];
 const pendingFirebase = new Map();
 const firebaseCases = /^(firebaseorder|firebasecorefailure|firebaseanalyticsfailure)_/;
+const firebaseTraceScript = [
+  'if (!window.fixtureFirebaseTrace) {',
+  '  window.fixtureFirebaseTrace = [];',
+  '  window.fixtureFirebaseFailures = [];',
+  '  window.fixtureFirebaseErrors = [];',
+  '  window.addEventListener("error", function(event) {',
+  '    if (event.message) window.fixtureFirebaseErrors.push(event.message);',
+  '    var source = event.target && event.target.src;',
+  '    if (source && source.indexOf("/firebase-fixture/") !== -1) {',
+  '      window.fixtureFirebaseFailures.push(source.split("/").pop());',
+  '    }',
+  '  }, true);',
+  '}'
+].join('\n');
 const firebaseSDKs = {
   'firebase-app-compat.js': [
     'window.fixtureFirebaseTrace.push("app-sdk");',
@@ -250,6 +264,13 @@ const web = http.createServer((request, response) => {
   const scenario = url.pathname.match(/^\/case\/([\w-]+)\/(.*)$/);
   const relative = scenario ? scenario[2] : url.pathname.slice(1);
   const firebaseCase = scenario && firebaseCases.exec(scenario[1]);
+  if (relative === 'js/firebase-analytics.js') {
+    const script = firebaseCase ? firebaseTraceScript + '\n' +
+      fs.readFileSync(path.join(project, relative), 'utf8')
+        .replace(/https:\/\/www\.gstatic\.com\/firebasejs\/9\.8\.0\//g, '/case/' + scenario[1] + '/firebase-fixture/') : '';
+    respond(response, 200, 'application/javascript', script);
+    return;
+  }
   const firebaseSDK = firebaseCase && /^firebase-fixture\/(firebase-(?:app|analytics)-compat\.js)$/.exec(relative);
   if (firebaseSDK) {
     const sdk = firebaseSDK[1];
@@ -338,23 +359,9 @@ const web = http.createServer((request, response) => {
       '  };',
       '}());</script>'
     ].join('\n') : '';
-    const firebaseTrace = firebaseCase ? [
-      'window.fixtureFirebaseTrace = [];',
-      'window.fixtureFirebaseFailures = [];',
-      'window.fixtureFirebaseErrors = [];',
-      'window.addEventListener("error", function(event) {',
-      '  if (event.message) window.fixtureFirebaseErrors.push(event.message);',
-      '  var source = event.target && event.target.src;',
-      '  if (source && source.indexOf("/firebase-fixture/") !== -1) {',
-      '    window.fixtureFirebaseFailures.push(source.split("/").pop());',
-      '  }',
-      '}, true);'
-    ].join('\n') : '';
+    const firebaseTrace = firebaseCase ? firebaseTraceScript : '';
     const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '\n' + restoredSearch + '\n' + firebaseTrace + '</script>';
     const index = fs.readFileSync(path.join(project, 'index.html'), 'utf8')
-      .replace(/<script id="firebase-analytics-bootstrap">[\s\S]*?<\/script>/, script => firebaseCase
-        ? script.replace(/https:\/\/www\.gstatic\.com\/firebasejs\/9\.8\.0\/(firebase-(?:app|analytics)-compat\.js)/g, 'firebase-fixture/$1')
-        : '')
       .replace('<script src="js/message-store.js"></script>',
         '<script>' + storageSettings(scenario[1]) + '</script><script src="js/message-store.js"></script>')
       .replace('<script src="js/message-search-fuzzy.js"></script>',

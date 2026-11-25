@@ -957,6 +957,7 @@ function msgFilterSearchInputChanged(userInitiated) {
  */
 function restoreHistoryRoute() {
   var entry = Navadmin.navigation.readHistory();
+  Navadmin.navigation.updateCanonicalLink();
   var route = entry.route;
   var list = entry.list;
   var hasMessage = route.number > 0;

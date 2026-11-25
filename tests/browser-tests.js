@@ -171,6 +171,17 @@
     return app.location.search.indexOf('&number=' + number) !== -1;
   }
 
+  function assertCanonical(query) {
+    var links = app.document.querySelectorAll('link[rel="canonical"]');
+    var expected = query ? 'https://navadmin-viewer.github.io/' + query : null;
+    assert(links.length === (expected ? 1 : 0),
+      'Unexpected canonical link count for ' + app.location.search + ': ' + links.length);
+    if (expected) {
+      assert(links[0].parentNode === app.document.head && links[0].getAttribute('href') === expected,
+        'Expected canonical ' + expected + ' but found ' + links[0].getAttribute('href'));
+    }
+  }
+
   function recordRequests(scenario, done) {
     var xhr = new XMLHttpRequest();
     xhr.open('GET', '/__requests?case=' + scenario + runId, true);
@@ -287,6 +298,7 @@
   steps.push(['Refresh existing metadata and preserve an old offline cache', function (done) {
     seedMessageDatabase('main', 2, [{ year: 2025, messages: firstCacheMessages() }], function () {
       open('main', '', function () { return tableHas('First [Campaign]'); }, function () {
+        assertCanonical();
         var row = select('#msg-list-table-body tr').last();
         assert(row.hasClass('table-danger'), 'Cancellation was not refreshed');
         assert(row.text().indexOf('37') >= 0, 'View count was not refreshed');
@@ -359,8 +371,10 @@
   steps.push(['Restore list history in both directions', function (done) {
     app.history.back();
     waitFor(function () { return tableHas('NAVADMIN 2024 subject'); }, function () {
+      assertCanonical('?type=NAVADMIN&year=2024');
       app.history.forward();
       waitFor(function () { return tableHas('NAVADMIN 2023 subject'); }, function () {
+        assertCanonical('?type=NAVADMIN&year=2023');
         clickMenu('msg-year', '2025');
         waitFor(function () { return tableHas('First [Campaign]'); }, done);
       });
@@ -389,6 +403,7 @@
     focus(opener);
     opener.click();
     waitFor(function () { return modalShown() && modalText() === linkedBody; }, function () {
+      assertCanonical('?type=NAVADMIN&year=2025&number=1');
       var body = select('#msg-body-modal .modal-body');
       var heading = select('#msg-body-modal .modal-title')[0];
       assert(isFocused(heading), 'Opening a message did not focus its heading');
@@ -410,10 +425,15 @@
       assert(/\/view-message\/\?type=NAVADMIN&year=2025&number=1$/.test(shared), 'Share URL did not match the visible message');
       app.jQuery(field).trigger(app.jQuery.Event('keydown', { which: 27, keyCode: 27 }));
       waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, function () {
+        assertCanonical();
         app.history.forward();
         waitFor(function () { return modalShown() && messageRoute(1) && modalText() === linkedBody && isFocused(heading); }, function () {
+          assertCanonical('?type=NAVADMIN&year=2025&number=1');
           app.history.back();
-          waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, done);
+          waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, function () {
+            assertCanonical();
+            done();
+          });
         });
       });
     });
@@ -429,6 +449,7 @@
       assert(body.text() === 'Retrieving message\u2026', 'The modal should show its loading text');
       assert(body.find('textarea').length === 0, 'The loading text should remain outside the message field');
       waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
+        assertCanonical('?type=NAVADMIN&year=2025&number=3');
         assert(body.find('.spinner-border').length === 0, 'The spinner stayed after the request failed');
         assert(body.find('textarea').length === 0, 'The error should remain outside the message field');
         var missing = messageLink('Missing body').closest('tr');
@@ -443,8 +464,10 @@
     clickRow('Slow missing body');
     app.prepareAndShowMessageModal(0, 2025, 2, null);
     waitFor(function () { return modalShown() && modalText() === 'Body of message 2'; }, function () {
+      assertCanonical('?type=NAVADMIN&year=2025&number=2');
       waitFor(function () { return yearComplete('2025'); }, function () {
         assert(modalText() === 'Body of message 2' && messageRoute(2), 'A stale error changed the visible message');
+        assertCanonical('?type=NAVADMIN&year=2025&number=2');
         done();
       });
     });
@@ -454,10 +477,23 @@
     open('direct', 'view-message/?type=NAVADMIN&year=2025&number=9', function () {
       return modalShown() && messageRoute(9) && modalText() === 'Body of message 9';
     }, function () {
+      assertCanonical('?type=NAVADMIN&year=2025&number=9');
       closeModal();
       waitFor(function () {
         return !modalShown() && !messageRoute(9) && tableHas('First [Campaign]') && isFocused(select('#msg-year-dropdown')[0]);
-      }, done);
+      }, function () {
+        assertCanonical('?type=NAVADMIN&year=2025');
+        done();
+      });
+    });
+  }]);
+
+  steps.push(['Canonicalize reordered message parameters and a zero-padded number', function (done) {
+    open('canonical', '?number=001&year=2025&type=NAVADMIN', function () {
+      return modalShown() && modalText() === linkedBody;
+    }, function () {
+      assertCanonical('?type=NAVADMIN&year=2025&number=1');
+      done();
     });
   }]);
 
@@ -513,6 +549,7 @@
       waitFor(function () {
         return tableHas(name === 'NAVADMIN' ? 'First [Campaign]' : name + ' 2025 subject');
       }, function () {
+        assertCanonical('?type=' + name);
         if (names.length) nextType();
         else done();
       });

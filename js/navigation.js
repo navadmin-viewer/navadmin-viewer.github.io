@@ -19,7 +19,7 @@
   /**
    * Read the message type, year, and number from a viewer URL.
    * @param {string} url The URL to read.
-   * @returns {Object} The type, year, and number. A value of -1 marks an unselected year or message.
+   * @returns {Object} The type, year, number, and whether the URL names a recognized type.
    */
   function readRoute(url) {
     var type = stringToMsgType(getUrlParameter(url, 'type'));
@@ -27,7 +27,7 @@
     var number = Number(getUrlParameter(url, 'number'));
 
     if (type == MsgType.UNKNOWN) {
-      return { type: MsgType.NAVADMIN, year: -1, number: -1 };
+      return { type: MsgType.NAVADMIN, year: -1, number: -1, hasExplicitType: false };
     }
     if (year <= 0 || year % 1 !== 0) {
       year = -1;
@@ -35,7 +35,7 @@
     if (year == -1 || number <= 0 || number % 1 !== 0) {
       number = -1;
     }
-    return { type: type, year: year, number: number };
+    return { type: type, year: year, number: number, hasExplicitType: true };
   }
 
   function createURLParameters(type, year, number) {
@@ -60,6 +60,28 @@
   function shareLink(type, year, number, redirect) {
     var path = redirect ? '/view-message/' : '/';
     return shareServer + path + createURLParameters(type, year, number);
+  }
+
+  /** Keep the canonical link aligned with the requested viewer route. */
+  function updateCanonicalLink() {
+    var route = readRoute(window.location.href);
+    var head = window.document.head;
+    var link = head.querySelector('link[rel="canonical"]');
+    if (!route.hasExplicitType) {
+      if (link) head.removeChild(link);
+      return;
+    }
+
+    var href = shareLink(route.type, route.year, route.number, false);
+    if (link) {
+      link.href = href;
+      return;
+    }
+
+    link = window.document.createElement('link');
+    link.rel = 'canonical';
+    link.href = href;
+    head.appendChild(link);
   }
 
   /**
@@ -145,6 +167,7 @@
       depth = 2;
     }
     pushMessageEntry(type, year, number, list, depth, opener);
+    updateCanonicalLink();
     return depth;
   }
 
@@ -160,6 +183,7 @@
     } else {
       console.log('No originating list is in history. Replacing the message URL with the list URL.');
       replaceWithList(list);
+      updateCanonicalLink();
     }
   }
 
@@ -182,6 +206,7 @@
     pushMessage: pushMessage,
     closeMessage: closeMessage,
     onPopState: onPopState,
+    updateCanonicalLink: updateCanonicalLink,
     shareLink: shareLink,
     redirectURL: redirectURL
   };

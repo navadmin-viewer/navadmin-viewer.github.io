@@ -23,14 +23,6 @@ Cross-year search works across years for the selected message type. **Title Only
 
 IE11 and other browsers without Unicode property escapes use literal search. To disable fuzzy search for all browsers, remove the `js/message-search-fuzzy.js` script tag from `index.html`.
 
-## 📡 Offline mode (added 17MAR2025)
-
-The web app downloads messages for the viewed year. The year menu shows a ✓ when the year's downloads are saved in the persistent store (IndexedDB). If IndexedDB is unavailable or rejects writes, a yellow progress bar shows downloads kept in the in-memory store. These downloads are available in the current tab until you reload or close it. Choose **Download all years** to download every year for the current message type.
-
-When IndexedDB reports that the persistent store is full, the viewer can move downloaded message bodies for the oldest eligible year of one message type to the in-memory store to make room for newer messages. You can open and search them in the current tab until you reload or close it. Titles stay searchable after reload. Years you are viewing or downloading are protected.
-
-You can Save (Ctrl-S/Cmd-S) the main website to your computer to use when fully offline because some browsers may not load the online main page without an internet connection (even when the messages are already locally stored). Either save the main site locally or don't navigate away to another website while away from internet.
-
 ### 🔗 Sharing link parameters
 
 You can create links which will automatically display a specific message by adding parameters to the URL. 
@@ -51,11 +43,19 @@ Parameter | Allowed Values | Description |
 `year` | 20xx | The message year. |
 `number` | xxx | The message number. |
 
-### ❔ FAQ
+### 📡 Offline mode (added 17MAR2025)
+
+The web app downloads messages for the viewed year. The year menu shows a ✓ when the year's downloads are saved in the persistent store (IndexedDB). If IndexedDB is unavailable or rejects writes, a yellow progress bar shows downloads kept in the in-memory store. These downloads are available in the current tab until you reload or close it. Choose **Download all years** to download every year for the current message type.
+
+When IndexedDB reports that the persistent store is full, the viewer can move downloaded message bodies for the oldest eligible year of one message type to the in-memory store to make room for newer messages. You can open and search them in the current tab until you reload or close it. Titles stay searchable after reload. Years you are viewing or downloading are protected.
+
+You can Save (Ctrl-S/⌘-S) the main website to your computer to use when fully offline because some browsers may not load the online main page without an internet connection (even when the messages are already locally stored). Either save the main site locally or don't navigate away to another website while away from internet.
+
+## ❔ FAQ
 
 See the main [FAQ](https://github.com/navadmin-viewer/?view_as=public)
 
-### 🎉 Credits
+## 📖 Credits
 
 All original code in NAVADMIN Viewer web client is available under terms of GPL-3.0.
 

@@ -28,7 +28,10 @@ var msgModal;
 var msgModalTitle;
 var messageBodyContainer;
 var pageDescription;
-var listDescription;
+var openGraphTitle;
+var openGraphDescription;
+var homeTitle;
+var homeDescription;
 
 $(document).ready(function() {
   $(document).ajaxStart(function() { $('html').addClass('wait'); });
@@ -41,7 +44,10 @@ $(document).ready(function() {
   msgModalTitle = msgModal.find('.modal-title');
   messageBodyContainer = msgModal.find('.modal-body');
   pageDescription = document.querySelector('meta[name="description"]');
-  listDescription = pageDescription ? pageDescription.getAttribute('content') : '';
+  openGraphTitle = document.querySelector('meta[property="og:title"]');
+  openGraphDescription = document.querySelector('meta[property="og:description"]');
+  homeTitle = document.title;
+  homeDescription = pageDescription.getAttribute('content');
 
   var visits = parseInt(getCookie(COOKIE_VISITS), 10) || 0;
   setCookie(COOKIE_VISITS, visits + 1);
@@ -112,12 +118,18 @@ $(document).ready(function() {
         messageNumber: shortNameForMessage(route.type, route.year, route.number)
       });
     }
+  } else {
+    setListMetadata(route);
   }
+  Navadmin.navigation.updateCanonicalLink();
 
   Navadmin.messageStore.load(function() {
     setFilterMsgTypeDropdown();
     restoreHistoryRoute();
     Navadmin.navigation.onPopState(restoreHistoryRoute);
+    if (typeof Navadmin.startFirebaseAnalytics === 'function') {
+      Navadmin.startFirebaseAnalytics();
+    }
   });
   getBroadcast(null);
 });
@@ -490,6 +502,7 @@ function loadMessageList(type, year) {
       }
       return;
     }
+    updateArchiveBreadcrumbs(Navadmin.navigation.readRoute(window.location.href));
     var responseYear = setFilterMsgYearDropdown(type, year);
     if (responseYear != displayedYear) {
       console.log('The latest available year for ' + listName + ' changed to ' + responseYear + '.');
@@ -518,20 +531,68 @@ function loadMessageList(type, year) {
       }
       if (selectedMessage) {
         setMessageTitle(selectedMessage);
+      } else {
+        updateArchiveBreadcrumbs(Navadmin.navigation.readRoute(window.location.href));
       }
     });
   });
 }
 
-/**
- * Restore the selected list’s title and the default page description.
- */
-function setListTitle() {
-  var title = shortNameForMessage(listSelection.type, listSelection.displayedYear);
-  document.title = title.trim() + ' - ' + NAVADMIN_VIEWER_TITLE;
-  if (pageDescription) {
-    pageDescription.setAttribute('content', listDescription);
+/** Synchronize search and sharing metadata for the active route. */
+function setPageMetadata(title, description) {
+  document.title = title;
+  pageDescription.setAttribute('content', description);
+  openGraphTitle.setAttribute('content', title);
+  openGraphDescription.setAttribute('content', description);
+}
+
+/** Publish one breadcrumb list for a confirmed destination, or clear it during navigation. */
+function setBreadcrumbStructuredData(route) {
+  var breadcrumbJsonLdElement = document.getElementById('viewer-breadcrumb-structured-data');
+  var items = route ? Navadmin.navigation.breadcrumbTrail(route) : [];
+  if (items.length < 2) {
+    if (breadcrumbJsonLdElement) document.head.removeChild(breadcrumbJsonLdElement);
+    return;
   }
+
+  var data = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map(function(item, index) {
+      return { '@type': 'ListItem', position: index + 1, name: item.name, item: item.url };
+    })
+  });
+  if (breadcrumbJsonLdElement) {
+    if (breadcrumbJsonLdElement.textContent !== data) breadcrumbJsonLdElement.textContent = data;
+    return;
+  }
+
+  breadcrumbJsonLdElement = document.createElement('script');
+  breadcrumbJsonLdElement.id = 'viewer-breadcrumb-structured-data';
+  breadcrumbJsonLdElement.type = 'application/ld+json';
+  breadcrumbJsonLdElement.textContent = data;
+  document.head.appendChild(breadcrumbJsonLdElement);
+}
+
+function updateArchiveBreadcrumbs(route) {
+  if (route.number > 0) return;
+
+  var confirmedYear = route.hasExplicitType && route.year > 0 &&
+    Navadmin.messageStore.years(route.type).indexOf(route.year) !== -1;
+  setBreadcrumbStructuredData(confirmedYear ? route : null);
+}
+
+/** Use the requested archive, even when it displays the latest available year. */
+function setListMetadata(route) {
+  updateArchiveBreadcrumbs(route);
+  if (!route.hasExplicitType) {
+    setPageMetadata(homeTitle, homeDescription);
+    return;
+  }
+
+  var archive = msgTypeToString(route.type) + (route.year > 0 ? ' ' + route.year : '');
+  setPageMetadata(archive + ' Message Archive | ' + NAVADMIN_VIEWER_TITLE,
+    'Browse ' + archive + ' messages by number and subject. Search by subject or full text.');
 }
 
 /**
@@ -545,9 +606,6 @@ function setListTitle() {
 function refreshMessageTable(msgType, msgYear, showEmptyIfUnavailable) {
   listSelection.displayedYear = msgYear;
   listSelection.showEmptyIfUnavailable = showEmptyIfUnavailable;
-  if (!selectedMessage) {
-    setListTitle();
-  }
 
   if (Navadmin.messageSearch.createLiteralMatcher(searchInput.value)) {
     msgFilterSearchInputChanged();
@@ -1087,7 +1145,7 @@ function restoreHistoryRoute() {
     if (messageModalPhase === 'shown') {
       msgModal.modal('hide');
     }
-    setListTitle();
+    setListMetadata(route);
     restoreMessageFocus();
   }
 }
@@ -1127,6 +1185,7 @@ function showMessage(type, year, number, depth, row, opener) {
   var message = { type: type, year: year, number: number, depth: depth, opener: opener };
   selectedMessage = message;
   messageToRestoreFocus = null;
+  setBreadcrumbStructuredData(null);
 
   var messageName = setMessageTitle(message);
   if (messageModalPhase === 'shown') {
@@ -1164,6 +1223,7 @@ function showMessage(type, year, number, depth, row, opener) {
       return;
     }
 
+    message.excerpt = messageBody ? getMessageExcerpt(messageBody) : '';
     setMessageTitle(message);
     if (!messageBody) {
       var messageError = errorText || 'Message not found.';
@@ -1180,6 +1240,7 @@ function showMessage(type, year, number, depth, row, opener) {
     });
     messageText[0].defaultValue = messageBody;
     messageBodyContainer.empty().append(messageText);
+    setBreadcrumbStructuredData(Navadmin.navigation.readRoute(window.location.href));
 
     if (typeof analytics !== 'undefined') {
       analytics.logEvent('ViewedMessage', { messageNumber: messageName });
@@ -1217,21 +1278,41 @@ function restoreMessageFocus() {
   }
 }
 
+function normalizeMetadataText(text) {
+  return text.replace(/[\u200b\ufeff]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Summarize the opening remarks while skipping transmission headers. */
+function getMessageExcerpt(body) {
+  var remarks = /^(?:RMKS|GENTEXT\/REMARKS)\//im.exec(body);
+  if (!remarks && /^(?:UNCLAS|ROUTINE\b|FM |MSGID\/|SUBJ\/)/im.test(body)) {
+    return '';
+  }
+
+  var content = remarks ? body.slice(remarks.index + remarks[0].length) : body;
+  content = content.split(/^(?:BT|NNNN|UNCLAS(?:SIFIED)?(?:\/\/)?)\s*$/im)[0];
+  content = normalizeMetadataText(content).replace(/^\d+\.\s+/, '');
+  var maximumLength = 160;
+  if (content.length <= maximumLength) {
+    return content;
+  }
+  return content.slice(0, maximumLength - 1).replace(/\s+\S*$/, '') + '\u2026';
+}
+
 /**
- * Update the modal title and page description using the cached subject.
+ * Update the dialog heading and search metadata as the subject and body arrive.
  * @param {Object} message The current message selection.
  * @returns {string} The short message name used for logging and analytics.
  */
 function setMessageTitle(message) {
   var name = shortNameForMessage(message.type, message.year, message.number);
   var cached = Navadmin.messageStore.findMessage(message.type, message.year, message.number);
-  var subject = cached && cached.title;
-  var title = name + (subject ? ' - ' + subject : '');
-  msgModalTitle.text(title);
-  document.title = title + ' - ' + NAVADMIN_VIEWER_TITLE;
-  if (pageDescription) {
-    pageDescription.setAttribute('content', subject || name);
-  }
+  var subject = cached && cached.title || '';
+  msgModalTitle.text(name + (subject ? ' - ' + subject : ''));
+  subject = normalizeMetadataText(subject);
+  var title = name + (subject ? ' \u2013 ' + subject : '');
+  var description = message.excerpt || (subject ? title : name + ' in the NAVADMIN Viewer message archive.');
+  setPageMetadata(title + ' | ' + NAVADMIN_VIEWER_TITLE, description);
   return name;
 }
 
@@ -1245,8 +1326,10 @@ function closeMessage() {
   var depth = selectedMessage.depth;
   messageToRestoreFocus = selectedMessage;
   selectedMessage = null;
-  setListTitle();
   Navadmin.navigation.closeMessage(listSelection, depth);
+  if (!depth) {
+    setListMetadata(Navadmin.navigation.readRoute(window.location.href));
+  }
 }
 
 /**

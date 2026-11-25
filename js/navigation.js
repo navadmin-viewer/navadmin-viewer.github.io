@@ -62,17 +62,29 @@
     return shareServer + path + createURLParameters(type, year, number);
   }
 
+  /** Describe the active route's parents, independent of the list that opened it. */
+  function breadcrumbTrail(route) {
+    if (!route.hasExplicitType || route.year < 1) return [];
+
+    var items = [
+      { name: msgTypeToString(route.type), url: shareLink(route.type, -1, -1, false) },
+      { name: String(route.year), url: shareLink(route.type, route.year, -1, false) }
+    ];
+    if (route.number > 0) {
+      items.push({
+        name: shortNameForMessage(route.type, route.year, route.number),
+        url: shareLink(route.type, route.year, route.number, false)
+      });
+    }
+    return items;
+  }
+
   /** Keep the canonical link aligned with the requested viewer route. */
   function updateCanonicalLink() {
     var route = readRoute(window.location.href);
     var head = window.document.head;
     var link = head.querySelector('link[rel="canonical"]');
-    if (!route.hasExplicitType) {
-      if (link) head.removeChild(link);
-      return;
-    }
-
-    var href = shareLink(route.type, route.year, route.number, false);
+    var href = route.hasExplicitType ? shareLink(route.type, route.year, route.number, false) : shareServer + '/';
     if (link) {
       link.href = href;
       return;
@@ -208,6 +220,7 @@
     onPopState: onPopState,
     updateCanonicalLink: updateCanonicalLink,
     shareLink: shareLink,
+    breadcrumbTrail: breadcrumbTrail,
     redirectURL: redirectURL
   };
 })(window);

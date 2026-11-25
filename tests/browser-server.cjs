@@ -5,6 +5,21 @@ const path = require('node:path');
 const project = path.resolve(__dirname, '..');
 const host = '127.0.0.1';
 const requests = [];
+const pendingFirebase = new Map();
+const firebaseCases = /^(firebaseorder|firebasecorefailure|firebaseanalyticsfailure)_/;
+const firebaseSDKs = {
+  'firebase-app-compat.js': [
+    'window.fixtureFirebaseTrace.push("app-sdk");',
+    'window.firebase = { initializeApp: function() { window.fixtureFirebaseTrace.push("initializeApp"); } };'
+  ].join('\n'),
+  'firebase-analytics-compat.js': [
+    'window.fixtureFirebaseTrace.push("analytics-sdk");',
+    'window.firebase.analytics = function() {',
+    '  window.fixtureFirebaseTrace.push("analytics");',
+    '  return { logEvent: function(name) { window.fixtureFirebaseTrace.push(name); } };',
+    '};'
+  ].join('\n')
+};
 const types = ['NAVADMIN', 'ALNAV', 'MARADMIN', 'ALMAR'];
 const linkedMessageBody = 'Literal <tag> & source text\nSee NAVADMIN 002/25 and OPNAVINST 10126.5.';
 const searchMessageBody = 'A literal [Needle]+ <img src=x onerror="window.fixtureMarkupRan=true"> & more.\nSecond line.';
@@ -215,6 +230,14 @@ const web = http.createServer((request, response) => {
     json(response, requests.filter(row => row.scenario === url.searchParams.get('case')));
     return;
   }
+  if (url.pathname === '/__releaseFirebase') {
+    const key = url.searchParams.get('case') + '/' + url.searchParams.get('sdk');
+    const send = pendingFirebase.get(key);
+    pendingFirebase.set(key, true);
+    if (typeof send === 'function') send();
+    respond(response, 200, 'text/plain', 'Released');
+    return;
+  }
   if (url.pathname === '/') {
     respond(response, 200, 'text/html',
       '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">' +
@@ -226,6 +249,28 @@ const web = http.createServer((request, response) => {
 
   const scenario = url.pathname.match(/^\/case\/([\w-]+)\/(.*)$/);
   const relative = scenario ? scenario[2] : url.pathname.slice(1);
+  const firebaseCase = scenario && firebaseCases.exec(scenario[1]);
+  const firebaseSDK = firebaseCase && /^firebase-fixture\/(firebase-(?:app|analytics)-compat\.js)$/.exec(relative);
+  if (firebaseSDK) {
+    const sdk = firebaseSDK[1];
+    const caseName = firebaseCase[1];
+    if (caseName === 'firebasecorefailure' || (caseName === 'firebaseanalyticsfailure' && sdk === 'firebase-analytics-compat.js')) {
+      respond(response, 503, 'text/plain', 'Firebase SDK unavailable');
+      return;
+    }
+
+    const key = scenario[1] + '/' + sdk;
+    const send = () => respond(response, 200, 'application/javascript', firebaseSDKs[sdk]);
+    if (caseName === 'firebaseorder' && pendingFirebase.get(key) !== true) {
+      pendingFirebase.set(key, send);
+      response.once('close', () => {
+        if (pendingFirebase.get(key) === send) pendingFirebase.delete(key);
+      });
+      return;
+    }
+    send();
+    return;
+  }
   if (scenario && scenario[1].startsWith('fuzzyunavailable_') && relative === 'js/message-search-fuzzy.js') {
     respond(response, 404, 'text/plain', 'Optional search module unavailable');
     return;
@@ -293,10 +338,23 @@ const web = http.createServer((request, response) => {
       '  };',
       '}());</script>'
     ].join('\n') : '';
-    const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '\n' + restoredSearch + '</script>';
+    const firebaseTrace = firebaseCase ? [
+      'window.fixtureFirebaseTrace = [];',
+      'window.fixtureFirebaseFailures = [];',
+      'window.fixtureFirebaseErrors = [];',
+      'window.addEventListener("error", function(event) {',
+      '  if (event.message) window.fixtureFirebaseErrors.push(event.message);',
+      '  var source = event.target && event.target.src;',
+      '  if (source && source.indexOf("/firebase-fixture/") !== -1) {',
+      '    window.fixtureFirebaseFailures.push(source.split("/").pop());',
+      '  }',
+      '}, true);'
+    ].join('\n') : '';
+    const testSettings = '<script>server=' + JSON.stringify(endpoint) + ';\n' + queueTrace + '\n' + restoredSearch + '\n' + firebaseTrace + '</script>';
     const index = fs.readFileSync(path.join(project, 'index.html'), 'utf8')
-      .replace(/<script src="https:\/\/www\.gstatic\.com\/[^"]+"><\/script>/g, '')
-      .replace(/<script>\s*\/\/ Your web app's Firebase configuration[\s\S]*?<\/script>/, '')
+      .replace(/<script id="firebase-analytics-bootstrap">[\s\S]*?<\/script>/, script => firebaseCase
+        ? script.replace(/https:\/\/www\.gstatic\.com\/firebasejs\/9\.8\.0\/(firebase-(?:app|analytics)-compat\.js)/g, 'firebase-fixture/$1')
+        : '')
       .replace('<script src="js/message-store.js"></script>',
         '<script>' + storageSettings(scenario[1]) + '</script><script src="js/message-store.js"></script>')
       .replace('<script src="js/message-search-fuzzy.js"></script>',

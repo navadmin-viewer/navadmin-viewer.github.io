@@ -12,6 +12,10 @@
   var runId = '_' + Date.now() + '_' + Math.random().toString(36).slice(2);
   var linkedMessageBody = 'Literal <tag> & source text\nSee NAVADMIN 002/25 and OPNAVINST 10126.5.';
   var searchMessageBody = 'A literal [Needle]+ <img src=x onerror="window.fixtureMarkupRan=true"> & more.\nSecond line.';
+  var viewerURL = 'https://navadmin-viewer.github.io/';
+  var homeTitle = 'NAVADMIN Viewer | Search Navy & Marine Corps Messages';
+  var homeDescription = 'Read U.S. Navy and Marine Corps messages online. Search NAVADMIN, ALNAV, MARADMIN, and ALMAR by title or full text.';
+  var firstMessageTitle = 'NAVADMIN 001/25 \u2013 First [Campaign] | NAVADMIN Viewer App';
 
   frame.title = 'Viewer under test';
   frame.style.width = '100%';
@@ -205,13 +209,56 @@
 
   function assertCanonical(query) {
     var links = app.document.querySelectorAll('link[rel="canonical"]');
-    var expected = query ? 'https://navadmin-viewer.github.io/' + query : null;
-    assert(links.length === (expected ? 1 : 0),
-      'Unexpected canonical link count for ' + app.location.search + ': ' + links.length);
-    if (expected) {
-      assert(links[0].parentNode === app.document.head && links[0].getAttribute('href') === expected,
-        'Expected canonical ' + expected + ' but found ' + links[0].getAttribute('href'));
-    }
+    var expected = viewerURL + (query || '');
+    assert(links.length === 1, 'Unexpected canonical link count for ' + app.location.search + ': ' + links.length);
+    assert(links[0].parentNode === app.document.head && links[0].getAttribute('href') === expected,
+      'Expected canonical ' + expected + ' but found ' + links[0].getAttribute('href'));
+  }
+
+  function assertTitle(viewerDocument, expected) {
+    assert(viewerDocument.title === expected, 'Expected title ' + expected + ' but found ' + viewerDocument.title);
+  }
+
+  function assertHomeMetadata(viewerDocument) {
+    var description = viewerDocument.querySelector('meta[name="description"]');
+    assertTitle(viewerDocument, homeTitle);
+    assert(description && description.getAttribute('content') === homeDescription, 'The homepage description was incorrect');
+    assertOpenGraphMetadata(viewerDocument, homeDescription);
+  }
+
+  function assertOpenGraphMetadata(viewerDocument, description) {
+    var ogTitle = viewerDocument.querySelector('meta[property="og:title"]');
+    var ogDescription = viewerDocument.querySelector('meta[property="og:description"]');
+    assert(ogTitle && ogTitle.getAttribute('content') === viewerDocument.title, 'Open Graph should match the page title');
+    assert(ogDescription && ogDescription.getAttribute('content') === description, 'Open Graph should match the page description');
+  }
+
+  function assertWebsiteStructuredData(viewerDocument) {
+    var scripts = viewerDocument.head.querySelectorAll('script[type="application/ld+json"]');
+    assert(scripts.length === 1, 'The homepage should declare one structured data block');
+    var website = JSON.parse(scripts[0].textContent);
+    assert(website['@context'] === 'https://schema.org' && website['@type'] === 'WebSite' &&
+      website.name === 'NAVADMIN Viewer' && website.url === viewerURL, 'The homepage WebSite data was incorrect');
+  }
+
+  function assertNoBreadcrumbStructuredData() {
+    assert(!app.document.getElementById('viewer-breadcrumb-structured-data'),
+      'Unexpected breadcrumb structured data at ' + app.location.pathname + app.location.search);
+  }
+
+  function assertBreadcrumbStructuredData(expected) {
+    var scripts = app.document.querySelectorAll('script#viewer-breadcrumb-structured-data[type="application/ld+json"]');
+    assert(scripts.length === 1, 'Expected one breadcrumb structured data block');
+    var schema = JSON.parse(scripts[0].textContent);
+    assert(schema['@context'] === 'https://schema.org' && schema['@type'] === 'BreadcrumbList' &&
+      schema.itemListElement.length === expected.length, 'The breadcrumb structured data did not describe the current route');
+    expected.forEach(function (crumb, index) {
+      var label = crumb[0];
+      var url = viewerURL + crumb[1];
+      var item = schema.itemListElement[index];
+      assert(item['@type'] === 'ListItem' && item.position === index + 1 && item.name === label && item.item === url,
+        'The structured data entry for ' + label + ' was incorrect');
+    });
   }
 
   function recordRequests(scenario, done) {
@@ -224,6 +271,44 @@
       }
     };
     xhr.send();
+  }
+
+  function openFirebaseMessage(scenario, sdkReady, next) {
+    var viewerPath = '/case/' + scenario + runId + '/';
+    frame.onload = null;
+    frame.src = viewerPath + '?type=NAVADMIN&year=2025&number=1';
+    // An outstanding script can hold the iframe load event even after the viewer can be used.
+    waitFor(function () {
+      app = frame.contentWindow;
+      return app.location.pathname === viewerPath && app.fixtureFirebaseTrace && app.jQuery &&
+        modalShown() && modalText() === linkedMessageBody && app.viewRegistrationSucceeded &&
+        app.jQuery.active === 0 && sdkReady();
+    }, function () {
+      assertCanonical('?type=NAVADMIN&year=2025&number=1');
+      assertBreadcrumbStructuredData([['NAVADMIN', '?type=NAVADMIN'], ['2025', '?type=NAVADMIN&year=2025'],
+        ['NAVADMIN 001/25', '?type=NAVADMIN&year=2025&number=1']]);
+      recordRequests(scenario, function (requests) {
+        assert(requests.some(function (request) {
+          return request.endpoint === 'updateUserActivity' && request.form.activityMsgNumber === '1';
+        }), 'Firebase delayed or prevented the viewer API from recording a view');
+        next();
+      });
+    });
+  }
+
+  function firebaseScripts(sdk) {
+    return app.document.querySelectorAll('script[src$="firebase-fixture/' + sdk + '"]');
+  }
+
+  function releaseFirebase(scenario, sdk, next) {
+    var request = new XMLHttpRequest();
+    request.open('POST', '/__releaseFirebase?case=' + scenario + runId + '&sdk=' + sdk, true);
+    request.onload = function () {
+      assert(request.status === 200, 'Could not release the held Firebase response');
+      next();
+    };
+    request.onerror = function () { report('FAIL: Could not release the held Firebase response'); };
+    request.send();
   }
 
   function firstCacheMessages() {
@@ -292,6 +377,20 @@
     });
   }
 
+  steps.push(['Serve descriptive homepage metadata in the initial HTML', function (done) {
+    var request = new XMLHttpRequest();
+    request.open('GET', '/case/metadata' + runId + '/', true);
+    request.responseType = 'document';
+    request.onload = function () {
+      assert(request.status === 200 && request.response, 'Could not read the homepage document');
+      assertHomeMetadata(request.response);
+      assertWebsiteStructuredData(request.response);
+      done();
+    };
+    request.onerror = function () { report('FAIL: Could not load the homepage HTML'); };
+    request.send();
+  }]);
+
   steps.push(['Repair blank entries already stored by IndexedDB version 1', function (done) {
     seedMessageDatabase('blankidb', 1, [{ year: 2025, messages: messagesWithBlankCachedBodies() }], function () {
       verifyBlankCacheRepair('blankidb', done);
@@ -331,6 +430,8 @@
     seedMessageDatabase('main', 2, [{ year: 2025, messages: firstCacheMessages() }], function () {
       open('main', '', function () { return tableHas('First [Campaign]'); }, function () {
         assertCanonical();
+        assertHomeMetadata(app.document);
+        assertNoBreadcrumbStructuredData();
         var row = select('#msg-list-table-body tr').last();
         assert(row.hasClass('table-danger'), 'Cancellation was not refreshed');
         assert(row.text().indexOf('37') >= 0, 'View count was not refreshed');
@@ -439,6 +540,12 @@
     opener.click();
     waitFor(function () { return modalShown() && modalText() === linkedMessageBody; }, function () {
       assertCanonical('?type=NAVADMIN&year=2025&number=1');
+      assertTitle(app.document, firstMessageTitle);
+      var trail = [['NAVADMIN', '?type=NAVADMIN'], ['2025', '?type=NAVADMIN&year=2025'],
+        ['NAVADMIN 001/25', '?type=NAVADMIN&year=2025&number=1']];
+      assertBreadcrumbStructuredData(trail);
+      assert(!app.document.querySelector('nav[aria-label="Breadcrumb"], #archive-breadcrumbs, #message-breadcrumbs'),
+        'The message route rendered breadcrumb navigation');
       var modalBody = select('#message-body-modal .modal-body');
       var heading = select('#message-body-modal .modal-title')[0];
       assert(isFocused(heading), 'Opening a message did not focus its heading');
@@ -461,12 +568,16 @@
       app.jQuery(field).trigger(app.jQuery.Event('keydown', { which: 27, keyCode: 27 }));
       waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, function () {
         assertCanonical();
+        assertHomeMetadata(app.document);
+        assertNoBreadcrumbStructuredData();
         app.history.forward();
         waitFor(function () { return modalShown() && messageRoute(1) && modalText() === linkedMessageBody && isFocused(heading); }, function () {
           assertCanonical('?type=NAVADMIN&year=2025&number=1');
+          assertBreadcrumbStructuredData(trail);
           app.history.back();
           waitFor(function () { return !modalShown() && !messageRoute(1) && isFocused(opener); }, function () {
             assertCanonical();
+            assertNoBreadcrumbStructuredData();
             done();
           });
         });
@@ -485,6 +596,7 @@
       assert(modalBody.find('textarea').length === 0, 'The loading text should remain outside the message field');
       waitFor(function () { return modalShown() && modalText() === 'Message text is not publicly released.'; }, function () {
         assertCanonical('?type=NAVADMIN&year=2025&number=3');
+        assertNoBreadcrumbStructuredData();
         assert(modalBody.find('.spinner-border').length === 0, 'The spinner stayed after the request failed');
         assert(modalBody.find('textarea').length === 0, 'The error should remain outside the message field');
         var missing = messageLink('Missing body').closest('tr');
@@ -518,6 +630,8 @@
         return !modalShown() && !messageRoute(9) && tableHas('First [Campaign]') && isFocused(select('#msg-year-dropdown')[0]);
       }, function () {
         assertCanonical('?type=NAVADMIN&year=2025');
+        assertTitle(app.document, 'NAVADMIN 2025 Message Archive | NAVADMIN Viewer App');
+        assertBreadcrumbStructuredData([['NAVADMIN', '?type=NAVADMIN'], ['2025', '?type=NAVADMIN&year=2025']]);
         done();
       });
     });
@@ -528,6 +642,23 @@
       return modalShown() && modalText() === linkedMessageBody;
     }, function () {
       assertCanonical('?type=NAVADMIN&year=2025&number=1');
+      assertTitle(app.document, firstMessageTitle);
+      assertBreadcrumbStructuredData([['NAVADMIN', '?type=NAVADMIN'], ['2025', '?type=NAVADMIN&year=2025'],
+        ['NAVADMIN 001/25', '?type=NAVADMIN&year=2025&number=1']]);
+      var description = app.document.querySelector('meta[name="description"]').getAttribute('content');
+      assert(description.indexOf('source text') !== -1, 'The message description should summarize the loaded body');
+      assertOpenGraphMetadata(app.document, description);
+      done();
+    });
+  }]);
+
+  steps.push(['Use the archive title and canonical for an explicit message type', function (done) {
+    open('metadata', '?type=MARADMIN', function () {
+      return /MARADMIN \d+ subject/.test(select('#msg-list-table-body').text());
+    }, function () {
+      assertTitle(app.document, 'MARADMIN Message Archive | NAVADMIN Viewer App');
+      assertCanonical('?type=MARADMIN');
+      assertNoBreadcrumbStructuredData();
       done();
     });
   }]);
@@ -546,6 +677,47 @@
       });
     });
   }]);
+
+  steps.push(['Read a message and record its view before Firebase loads in order', function (done) {
+    var sdkApp = 'firebase-app-compat.js';
+    var sdkAnalytics = 'firebase-analytics-compat.js';
+    openFirebaseMessage('firebaseorder', function () { return firebaseScripts(sdkApp).length === 1; }, function () {
+      assert(firebaseScripts(sdkApp)[0].async, 'The Firebase app SDK script should load asynchronously');
+      assert(!app.fixtureFirebaseTrace.length && !firebaseScripts(sdkAnalytics).length,
+        'Firebase initialized or requested Analytics before its app SDK loaded');
+      releaseFirebase('firebaseorder', sdkApp, function () {
+        waitFor(function () { return firebaseScripts(sdkAnalytics).length === 1; }, function () {
+          assert(firebaseScripts(sdkAnalytics)[0].async, 'The Firebase Analytics SDK script should load asynchronously');
+          assert(app.fixtureFirebaseTrace.join(',') === 'app-sdk', 'Firebase initialized before the Analytics SDK loaded');
+          releaseFirebase('firebaseorder', sdkAnalytics, function () {
+            waitFor(function () { return app.fixtureFirebaseTrace.length >= 4; }, function () {
+              assert(app.fixtureFirebaseTrace.join(',') === 'app-sdk,analytics-sdk,initializeApp,analytics',
+                'Firebase initialized out of order, more than once, or logged a new event');
+              app.Navadmin.startFirebaseAnalytics();
+              assert(firebaseScripts(sdkApp).length === 1 && firebaseScripts(sdkAnalytics).length === 1,
+                'Starting Firebase again inserted duplicate SDK scripts');
+              assert(!app.fixtureFirebaseFailures.length && !app.fixtureFirebaseErrors.length, 'Firebase caused a viewer error');
+              done();
+            });
+          });
+        });
+      });
+    });
+  }]);
+
+  [
+    ['firebasecorefailure', 'firebase-app-compat.js', ''],
+    ['firebaseanalyticsfailure', 'firebase-analytics-compat.js', 'app-sdk']
+  ].forEach(function (failure) {
+    steps.push(['Keep reading and recording views when ' + failure[1] + ' is unavailable', function (done) {
+      openFirebaseMessage(failure[0], function () { return app.fixtureFirebaseFailures.length; }, function () {
+        assert(app.fixtureFirebaseFailures.join(',') === failure[1], 'Unexpected Firebase SDK failures');
+        assert(app.fixtureFirebaseTrace.join(',') === failure[2], 'Firebase initialized after an SDK failed');
+        assert(!app.fixtureFirebaseErrors.length, 'A blocked Firebase SDK caused an uncaught viewer error');
+        done();
+      });
+    }]);
+  });
 
   steps.push(['Coalesce concurrent message body requests and retry view registration', function (done) {
     open('activity', '', function () { return tableHas('First [Campaign]'); }, function () {
@@ -800,7 +972,21 @@
             }
             recordRequests('fuzzyoffline', function (requests) {
               assert(!listMessageBodyRequests(requests).length, 'Offline search requested a cached message body from the API');
-              done();
+              if (!useFuzzySearch) return done();
+
+              clickRow(exactTitle);
+              waitFor(function () { return modalShown() && modalText() === 'Read the INSTRUCTION.'; }, function () {
+                assertCanonical('?type=NAVADMIN&year=2024&number=1');
+                assertBreadcrumbStructuredData([['NAVADMIN', '?type=NAVADMIN'],
+                  ['2024', '?type=NAVADMIN&year=2024'], ['NAVADMIN 001/24', '?type=NAVADMIN&year=2024&number=1']]);
+                closeModal();
+                waitFor(function () { return !modalShown() && app.location.search === '?type=NAVADMIN&year=2025'; }, function () {
+                  assertCanonical('?type=NAVADMIN&year=2025');
+                  assertBreadcrumbStructuredData([['NAVADMIN', '?type=NAVADMIN'],
+                    ['2025', '?type=NAVADMIN&year=2025']]);
+                  done();
+                });
+              });
             });
           });
         });

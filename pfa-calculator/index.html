@@ -74,7 +74,17 @@
           <h1 class="mb-2">Navy PFA Calculator</h1>
         </div>
         <div class="form-group col-sm-6 col-lg-3 mb-2 mb-sm-0">
-          <label for="pfa-goal-score">Target PRT score</label>
+          <div class="d-flex align-items-center mb-2">
+            <label class="mb-0" for="pfa-goal-score">Your target PRT score</label>
+            <button type="button" id="pfa-goal-help" class="btn btn-sm text-secondary"
+              aria-label="Help with target PRT score" data-toggle="popover" data-placement="auto" data-html="true"
+              data-content="Empty event scores show the reps, time, or calories needed to earn the selected target score in that event.&lt;br&gt;≥ means at least&lt;br&gt;≤ means at most">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+              </svg>
+            </button>
+          </div>
           <select id="pfa-goal-score" class="custom-select" disabled>
             <option value="">Probationary</option>
           </select>
@@ -100,7 +110,7 @@
           <div class="form-row align-items-end">
             <div class="form-group col-6 col-md-3">
               <label for="pfa-sex">Sex</label>
-              <select id="pfa-sex" class="custom-select">
+              <select id="pfa-sex" class="custom-select border-warning">
                 <option value="">Select sex</option>
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -192,7 +202,7 @@
           <div class="form-row">
             <div class="form-group col-6 col-md-3">
               <label for="pfa-age">Age (years)</label>
-              <input id="pfa-age" class="form-control" type="number" inputmode="numeric" min="17" step="1">
+              <input id="pfa-age" class="form-control border-warning" type="number" inputmode="numeric" min="17" step="1">
             </div>
             <div class="form-group col-6 col-md-4">
               <label for="pfa-altitude">Test altitude</label>
@@ -209,17 +219,17 @@
                   <h3 class="h6 mb-2">Push-ups</h3>
                   <label for="pfa-pushups">Repetitions</label>
                   <input id="pfa-pushups" class="form-control" type="number" inputmode="numeric" min="0" step="1" aria-describedby="pfa-pushups-result">
-                  <p id="pfa-pushups-result" class="mb-0 mt-2" data-result="pushups">- pts</p>
+                  <p id="pfa-pushups-result" class="mb-0 mt-2 font-italic" data-result="pushups">- pts</p>
                 </div>
               </div>
             </div>
             <div class="col-12 col-sm-6">
               <div class="card h-100">
                 <div class="card-body p-3">
-                  <h3 class="h6 mb-2">Forearm plank</h3>
+                  <h3 class="h6 mb-2">Forearm Plank</h3>
                   <label for="pfa-plank">Time (m:ss)</label>
                   <input id="pfa-plank" class="form-control" type="text" inputmode="numeric" autocomplete="off" aria-describedby="pfa-plank-result" data-invalid-message="Enter minutes and seconds, such as 236 or 2:36.">
-                  <p id="pfa-plank-result" class="mb-0 mt-2" data-result="plank">- pts</p>
+                  <p id="pfa-plank-result" class="mb-0 mt-2 font-italic" data-result="plank">- pts</p>
                 </div>
               </div>
             </div>
@@ -227,7 +237,7 @@
 
           <fieldset aria-describedby="pfa-cardio-help">
             <legend class="h5 mb-1">Cardio</legend>
-            <p class="text-muted mb-3" id="pfa-cardio-help">Select one event for your PRT. Enter other results to compare.</p>
+            <p class="text-muted mb-3" id="pfa-cardio-help">Select one event for your PRT. Enter sex and age to show minimum scores for <span data-result="cardio-target">Probationary</span>.</p>
             <div class="form-row">
               <div class="col-12 col-sm-6 col-lg-4 mb-2">
                 <div class="card h-100 border-primary bg-light" data-cardio="run">
@@ -238,7 +248,7 @@
                     </div>
                     <label for="pfa-run" id="pfa-run-label">Time (m:ss)</label>
                     <input id="pfa-run" class="form-control" type="text" inputmode="numeric" autocomplete="off" aria-labelledby="pfa-use-run pfa-run-label" aria-describedby="pfa-run-result" data-invalid-message="Enter a time greater than 0:00, such as 1123 or 11:23.">
-                    <p id="pfa-run-result" class="mb-0 mt-2" data-result="run">- pts</p>
+                    <p id="pfa-run-result" class="mb-0 mt-2 font-italic" data-result="run">- pts</p>
                   </div>
                 </div>
               </div>
@@ -251,7 +261,7 @@
                     </div>
                     <label for="pfa-treadmill" id="pfa-treadmill-label">Time (m:ss)</label>
                     <input id="pfa-treadmill" class="form-control" type="text" inputmode="numeric" autocomplete="off" aria-labelledby="pfa-use-treadmill pfa-treadmill-label" aria-describedby="pfa-treadmill-result" data-invalid-message="Enter a time greater than 0:00, such as 1123 or 11:23.">
-                    <p id="pfa-treadmill-result" class="mb-0 mt-2" data-result="treadmill">- pts</p>
+                    <p id="pfa-treadmill-result" class="mb-0 mt-2 font-italic" data-result="treadmill">- pts</p>
                   </div>
                 </div>
               </div>
@@ -264,7 +274,7 @@
                     </div>
                     <label for="pfa-row" id="pfa-row-label">Time (m:ss)</label>
                     <input id="pfa-row" class="form-control" type="text" inputmode="numeric" autocomplete="off" aria-labelledby="pfa-use-row pfa-row-label" aria-describedby="pfa-row-result" data-invalid-message="Enter a time greater than 0:00, such as 840 or 8:40.">
-                    <p id="pfa-row-result" class="mb-0 mt-2" data-result="row">- pts</p>
+                    <p id="pfa-row-result" class="mb-0 mt-2 font-italic" data-result="row">- pts</p>
                   </div>
                 </div>
               </div>
@@ -277,7 +287,7 @@
                     </div>
                     <label for="pfa-swimYd" id="pfa-swimYd-label">Time (m:ss)</label>
                     <input id="pfa-swimYd" class="form-control" type="text" inputmode="numeric" autocomplete="off" aria-labelledby="pfa-use-swimYd pfa-swimYd-label" aria-describedby="pfa-swimYd-result" data-invalid-message="Enter a time greater than 0:00, such as 1000 or 10:00.">
-                    <p id="pfa-swimYd-result" class="mb-0 mt-2" data-result="swimYd">- pts</p>
+                    <p id="pfa-swimYd-result" class="mb-0 mt-2 font-italic" data-result="swimYd">- pts</p>
                   </div>
                 </div>
               </div>
@@ -290,7 +300,7 @@
                     </div>
                     <label for="pfa-swimM" id="pfa-swimM-label">Time (m:ss)</label>
                     <input id="pfa-swimM" class="form-control" type="text" inputmode="numeric" autocomplete="off" aria-labelledby="pfa-use-swimM pfa-swimM-label" aria-describedby="pfa-swimM-result" data-invalid-message="Enter a time greater than 0:00, such as 1000 or 10:00.">
-                    <p id="pfa-swimM-result" class="mb-0 mt-2" data-result="swimM">- pts</p>
+                    <p id="pfa-swimM-result" class="mb-0 mt-2 font-italic" data-result="swimM">- pts</p>
                   </div>
                 </div>
               </div>
@@ -314,7 +324,7 @@
                       <input id="pfa-bike-incomplete" class="custom-control-input" type="checkbox" aria-describedby="pfa-bike-result" disabled>
                       <label class="custom-control-label" for="pfa-bike-incomplete">Incomplete event recorded as a failure</label>
                     </div>
-                    <p id="pfa-bike-result" class="mb-0 mt-2" data-result="bike">- pts</p>
+                    <p id="pfa-bike-result" class="mb-0 mt-2 font-italic" data-result="bike">- pts</p>
                   </div>
                 </div>
               </div>

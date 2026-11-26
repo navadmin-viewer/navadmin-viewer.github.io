@@ -115,7 +115,7 @@
     return invalid ? null : value;
   }
 
-  function draw(name, text, tone) {
+  function draw(name, text, tone, preview) {
     var changed = false;
     $result.filter('[data-result="' + name + '"]').each(function () {
       var $element = $(this);
@@ -128,6 +128,7 @@
           .addClass('badge-' + (tone || 'secondary')).toggleClass('text-body', tone === 'success');
       } else {
         $element.toggleClass('font-weight-bold', Boolean(tone));
+        if (preview !== undefined) $element.toggleClass('text-muted', preview);
       }
     });
     return changed;
@@ -221,7 +222,22 @@
     draw('age-adjusted', ageAdjusted);
   }
 
-  function drawPrt(prt, editedEvent) {
+  function scorePrtPreviews(input, targets) {
+    var previewInputs = {};
+    Object.keys(targets).forEach(function (name) {
+      var control = field(name);
+      if (!control.disabled && control.value === '' && !control.validity.badInput) previewInputs[name] = targets[name];
+    });
+
+    var previews = {};
+    var events = Object.keys(previewInputs);
+    if (!events.length) return previews;
+    var scores = scoring.scorePrt($.extend({}, input, previewInputs), tables.prt, tables.bike).events;
+    events.forEach(function (name) { previews[name] = scores[name].points; });
+    return previews;
+  }
+
+  function drawPrt(prt, editedEvent, previews) {
     scoring.eventNames.forEach(function (name) {
       var event = prt.events[name];
       var labels = {
@@ -233,10 +249,14 @@
         unavailable: !tables.bike ? tableMessage('bike') : 'Score unavailable · see Navy PFA calculator'
       };
       var scored = event.status === 'scored';
+      var preview = !scored && previews[name] !== undefined;
       var text = scored ? event.points + ' pts · ' + event.category : labels[event.status];
+      if (preview) text = previews[name] + ' pts';
       if (event.incomplete) text += ' (incomplete event)';
-      var changed = draw(name, text, scored ? (event.points === 0 ? 'danger' : 'success') : '');
-      if (name === editedEvent && changed) $eventStatus.text(eventLabels[name] + '. ' + text);
+      var changed = draw(name, text, scored ? (event.points === 0 ? 'danger' : 'success') : '', preview);
+      if (name === editedEvent && changed) {
+        $eventStatus.text(eventLabels[name] + '. ' + (preview ? 'Target preview. ' : '') + text);
+      }
     });
 
     var summary = 'Awaiting results';
@@ -287,6 +307,7 @@
     var selected = $form.find('input[name="pfa-cardio"]:checked').val();
     var bikeIncompleteCheckbox = field('bike-incomplete');
     var bikeIncomplete = historical && bikeIncompleteCheckbox.checked;
+    var ageInput = field('age');
     var input = {
       edition: edition,
       sex: field('sex').value,
@@ -301,6 +322,8 @@
       pushups: number('pushups')
     };
 
+    $(field('sex')).toggleClass('border-warning', input.sex === '');
+    $(ageInput).toggleClass('border-warning', ageInput.value === '' && !ageInput.validity.badInput);
     field('current-waist').hidden = historical;
     field('waist').disabled = historical;
     field('current-bca').hidden = historical;
@@ -346,11 +369,13 @@
       $(this).toggleClass('border-primary bg-light', this.getAttribute('data-cardio') === selected);
     });
     var prt = tables.prt ? scoring.scorePrt(input, tables.prt, tables.bike) : { status: 'pending' };
-    drawPrtPlaceholders(scoring.passingPrtTargets(input, tables.prt, tables.bike, Number($goalScore.val())));
+    var targets = scoring.passingPrtTargets(input, tables.prt, tables.bike, Number($goalScore.val()));
+    draw('cardio-target', $goalScore.find('option:selected').text() || 'your target score');
+    drawPrtPlaceholders(targets);
     if (tables.prt) {
       var edited = editedInput && editedInput.id.slice(4);
       if (edited === 'bike-model' || edited === 'bike-incomplete') edited = 'bike';
-      drawPrt(prt, edited);
+      drawPrt(prt, edited, scorePrtPreviews(input, targets));
     } else {
       draw('prt', tableMessage('prt'));
       draw('prt-summary', tables.prt === null ? 'Unavailable' : 'Loading…');
@@ -473,6 +498,16 @@
   }
 
   $form.on('submit', function (event) { event.preventDefault(); });
+  var goalHelpSupportsHover = !window.matchMedia || !window.matchMedia('(hover: none)').matches;
+  var $goalHelp = $('#pfa-goal-help').popover({ container: 'body', trigger: goalHelpSupportsHover ? 'hover' : 'click' });
+  if (goalHelpSupportsHover) {
+    $goalHelp.on('click', function (event) {
+      if (event.detail === 0) $(this).popover('toggle');
+    }).on('blur', function () { $(this).popover('hide'); });
+  }
+  $goalHelp.on('keydown', function (event) {
+    if (event.which === 27) $(this).popover('hide');
+  });
   $form.on('input change focusout', 'input, select', function (event) {
     update(this, event.type === 'focusout' ? this : null);
     if (event.type === 'input') reportValidation(this);
